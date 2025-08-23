@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (Fix Pack)
+# app.py — LaSultana Meat Index (logo fijo, cinta continua, noticias grandes)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -14,6 +14,8 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .block-container{max-width:1400px;padding-top:8px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+
+/* GRID PRINCIPAL: 3 columnas */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .centerstack .box{margin-bottom:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
@@ -22,25 +24,29 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .kpi .big{font-size:48px;font-weight:900}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-/* Logo centrado y estable */
+
+/* LOGO controlado (nunca 60% de la pantalla) */
 .logo-wrap{display:flex;justify-content:center;margin:10px 0 14px}
-.logo img{max-width:320px;height:auto;display:block}
-/* Cinta bursátil lenta y constante */
+.logo-fixed{width:300px!important;height:auto;display:block}  /* <- Fijo a 300px */
+
+/* CINTA BURSÁTIL: lenta y sin huecos */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
 .tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
             font-family:ui-monospace,Menlo,Consolas,monospace;
-            animation:scroll 120s linear infinite}
+            animation:scroll 120s linear infinite}              /* lenta */
 .item{display:inline-block;margin:0 32px}
 @keyframes scroll{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
+
 /* Tabla pollo */
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
-/* Noticias grandes */
+
+/* Noticias GRANDES */
 .footer{margin-top:12px}
-.news-main{font-size:18px}
-.news-sub{font-size:16px;color:var(--muted)}
+.news-main{font-size:22px;font-weight:700}  /* <- más grande */
+.news-sub{font-size:18px;color:var(--muted)} /* <- más grande */
 .caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
@@ -53,17 +59,15 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ======= Logo (centrado con st.image, no se pierde) =======
-st.markdown('<div class="logo-wrap"><div class="logo">', unsafe_allow_html=True)
+# ======= LOGO (HTML directo para NO redimensionar raro) =======
 if os.path.exists("ILSMeatIndex.png"):
-    st.image("ILSMeatIndex.png", use_column_width=False)
-st.markdown('</div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="logo-wrap"><img src="ILSMeatIndex.png" class="logo-fixed"></div>', unsafe_allow_html=True)
 
-# ======= Cinta bursátil (14 empresas, lenta, fallback) =======
+# ======= CINTA BURSÁTIL (14 empresas) =======
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("JBS","JBS"),               # si falla, usar "JBSAY"
+    ("JBS","JBS"),               # si falla, "JBSAY"
     ("Marfrig Global","MRRTY"),  # o "MRFG3.SA"
     ("Minerva","MRVSY"),         # o "BEEF3.SA"
     ("Grupo Bafar","BAFARB.MX"),
@@ -73,7 +77,7 @@ COMPANIES = [
 ]
 
 @st.cache_data(ttl=75)
-def get_quotes():
+def fetch_quotes():
     out=[]
     for name, sym in COMPANIES:
         try:
@@ -88,24 +92,27 @@ def get_quotes():
         out.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return out
 
-# Mantén la última cinta en memoria por si Yahoo falla puntualmente
+# Mantén SIEMPRE algo en pantalla
 if "last_tape" not in st.session_state:
-    st.session_state.last_tape = get_quotes()
-eq = get_quotes() or st.session_state.last_tape
-st.session_state.last_tape = eq
+    st.session_state.last_tape = fetch_quotes()
+rows = fetch_quotes()
+if not rows:  # si Yahoo falla un instante
+    rows = st.session_state.last_tape
+else:
+    st.session_state.last_tape = rows
 
-line = ""
-for _ in range(2):  # duplicado para loop continuo
-    for r in eq:
-        cls = "green" if r["ch"]>=0 else "red"
-        arrow = "▲" if r["ch"]>=0 else "▼"
-        line += (
-            f"<span class='item'>{r['name']} ({r['sym']}) "
-            f"<b class='{cls}'>{r['px']:.2f} {arrow} {abs(r['ch']):.2f}</b></span>"
-        )
+# Construye línea base y repítela 6× para que NO haya huecos
+base = ""
+for r in rows:
+    cls = "green" if r["ch"]>=0 else "red"
+    arrow = "▲" if r["ch"]>=0 else "▼"
+    base += (f"<span class='item'>{r['name']} ({r['sym']}) "
+             f"<b class='{cls}'>{r['px']:.2f} {arrow} {abs(r['ch']):.2f}</b></span>")
+line = base * 6  # <- continuidad total
+
 st.markdown(f"<div class='tape'><div class='tape-inner'>{line}</div></div>", unsafe_allow_html=True)
 
-# ======= Datos (FX real + placeholders para AMS/MPR) =======
+# ======= Datos (FX real + placeholders MPR) =======
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -123,10 +130,10 @@ lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
 lc_delta = random.choice([+0.25, -0.25])
 lh_delta = random.choice([+0.40, -0.40])
 
-# ======= Grid principal (3 columnas, como tu foto) =======
+# ======= GRID (igual a la foto) =======
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# Columna izquierda — USD/MXN (número verde grande + delta debajo)
+# Izquierda — USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -139,7 +146,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Columna central apilada — Res/Cerdo con delta a la derecha
+# Centro — Res/Cerdo con delta a la derecha
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -163,22 +170,22 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Columna derecha — Tabla piezas de pollo
+# Derecha — piezas de pollo
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
-rows = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
+rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
 <div class="card">
   <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo</div>
   <table class="table">
     <thead><tr><th>Producto</th><th>USD/lb</th></tr></thead>
-    <tbody>{rows}</tbody>
+    <tbody>{rows_html}</tbody>
   </table>
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)  # /grid
 
-# ======= Noticias (2 líneas grandes, rotación cada 30s) =======
+# ======= Noticias (GRANDES, 2 líneas, rotando) =======
 news = [
   "USMEF: exportaciones de cerdo a México continúan firmes; demanda retail sostiene hams.",
   "USDA: beef cutout estable; middle meats firmes; rounds suaves.",
