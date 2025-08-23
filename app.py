@@ -1,6 +1,19 @@
-# app.py — LaSultana Meat Index (bandas 15% más rápidas)
-import os, time, random, datetime as dt
+# app.py — LaSultana Meat Index (logo robusto, cinta inmediata y lenta, 1 noticia breve)
+import os, random, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
+import pandas as pd
+
+# ============ AUTORELOAD (30s) con fallback si falta streamlit-autorefresh ============
+REFRESH_MS = 30_000  # <-- cámbialo a 15_000 si quieres 15s
+try:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=REFRESH_MS, key="auto")
+except Exception:
+    # Fallback: recarga vía JS si no está instalada la librería
+    st.components.v1.html(
+        f"<script>setTimeout(()=>window.parent.location.reload(), {REFRESH_MS});</script>",
+        height=0,
+    )
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
@@ -15,57 +28,53 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
 
-/* -------- LOGO: padding simétrico -------- */
-.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:22px 0 22px}
+/* LOGO */
+.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:8px 0 12px}
 
-/* -------- CINTA SUPERIOR (marquee continuo, ahora 265s) -------- */
+/* CINTA (18% más lenta: 260s) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
-.tape-track{display:flex;width:max-content;will-change:transform;animation:marquee 265s linear infinite}
-.tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
+            font-family:ui-monospace,Menlo,Consolas,monospace;
+            animation:scroll 260s linear infinite}
 .item{display:inline-block;margin:0 32px}
-@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes scroll{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
 
-/* -------- GRID PRINCIPAL -------- */
+/* GRID PRINCIPAL */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .centerstack .box{margin-bottom:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .left{display:flex;flex-direction:column;gap:6px}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900}
+.kpi .big{font-size:48px;font-weight:900;font-variant-numeric: tabular-nums}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
 
-/* -------- TABLA POLLO -------- */
+/* TABLA POLLO */
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* -------- NOTICIA (marquee continuo, ahora 224s) -------- */
+/* NOTICIA ÚNICA */
 .footer{margin-top:12px}
+.news-main{font-size:24px;font-weight:800}
 .caption{color:var(--muted)!important}
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-top:10px}
-.tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNews 224s linear infinite}
-.tape-news-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
-@keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 </style>
 """, unsafe_allow_html=True)
 
 # ==================== HELPERS ====================
 def fmt2(x: float) -> str:
-    s = f"{x:,.2f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.2f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 def fmt4(x: float) -> str:
-    s = f"{x:,.4f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.4f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ==================== LOGO ====================
+# ==================== LOGO (ROBUSTO) ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR ====================
+# ==================== CINTA (VISIBLE AL INSTANTE) ====================
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -74,40 +83,69 @@ COMPANIES = [
     ("Seaboard","SEB"), ("Hormel Foods","HRL"),
     ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
+# Mapeo silencioso para símbolos problemáticos (no cambia cómo se ve el nombre):
+SYMBOL_FIX = {"JBS": "JBSAY", "MRVSY": "MRVSY", "MRRTY": "MRRTY"}
 
-# Placeholder inmediato
-placeholder = "".join(
+# 1) Placeholder inmediato (cero parpadeo)
+placeholder_text = "".join(
     f"<span class='item'>{n} ({s}) <b class='green'>-- ▲ --</b></span>" for n,s in COMPANIES
 )
 tape_block = st.container()
 with tape_block:
-    st.markdown(
-        f"""
-        <div class='tape'>
-          <div class='tape-track'>
-            <div class='tape-group'>{placeholder}</div>
-            <div class='tape-group' aria-hidden='true'>{placeholder}</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True
-    )
+    st.markdown(f"<div class='tape'><div class='tape-inner'>{placeholder_text*10}</div></div>",
+                unsafe_allow_html=True)
 
+# ==================== QUOTES con fallback 5d/5m + memo último bueno ====================
 @st.cache_data(ttl=75)
+def _fetch_one(sym: str):
+    """Devuelve (last, delta) usando 1d/1m; si no hay datos cae a 5d/5m."""
+    def _from(df: pd.DataFrame):
+        if df is None or df.empty: return None
+        df = df.dropna(subset=["Close"])
+        last = float(df["Close"].iloc[-1])
+        first = float(df["Close"].iloc[0])
+        return last, last - first
+
+    # 1) Intradía puro
+    try:
+        df = yf.download(sym, period="1d", interval="1m", auto_adjust=False,
+                         progress=False, prepost=True, threads=False)
+        snap = _from(df)
+        if snap: return snap
+    except Exception:
+        pass
+    # 2) Fallback 5d/5m: usa último vs cierre previo
+    try:
+        df = yf.download(sym, period="5d", interval="5m", auto_adjust=False,
+                         progress=False, prepost=True, threads=False)
+        if df is None or df.empty: return None
+        df = df.dropna(subset=["Close"])
+        last = float(df["Close"].iloc[-1])
+        prev = float(df["Close"].iloc[-2]) if len(df) > 1 else last
+        return last, last - prev
+    except Exception:
+        return None
+
 def fetch_quotes():
+    if "last_good" not in st.session_state:
+        st.session_state.last_good = {}
     data=[]
     for name, sym in COMPANIES:
-        try:
-            hist = yf.Ticker(sym).history(period="1d", interval="1m")
-            if hist is None or hist.empty: raise ValueError("no data")
-            last  = float(hist["Close"].dropna().iloc[-1])
-            first = float(hist["Close"].dropna().iloc[0])
-            ch    = last - first
-        except Exception:
-            last = round(40 + random.random()*80, 2)
-            ch   = round(random.uniform(-1.5, 1.5), 2)
+        real = SYMBOL_FIX.get(sym, sym)
+        snap = _fetch_one(real)
+        if snap:
+            last, ch = snap
+            st.session_state.last_good[real] = (last, ch)
+        else:
+            # Usa último bueno; si no hay, como último recurso muestra random suave para no romper la cinta
+            last, ch = st.session_state.last_good.get(real, (None, None))
+            if last is None:
+                last = round(40 + random.random()*80, 2)
+                ch   = round(random.uniform(-1.2, 1.2), 2)
         data.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return data
 
+# 2) Reemplazo sin borrar el bloque
 quotes = fetch_quotes()
 line = ""
 for q in quotes:
@@ -117,40 +155,33 @@ for q in quotes:
         f"<span class='item'>{q['name']} ({q['sym']}) "
         f"<b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
     )
-
 with tape_block:
-    st.markdown(
-        f"""
-        <div class='tape'>
-          <div class='tape-track'>
-            <div class='tape-group'>{line}</div>
-            <div class='tape-group' aria-hidden='true'>{line}</div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True
-    )
+    st.markdown(f"<div class='tape'><div class='tape-inner'>{line*10}</div></div>",
+                unsafe_allow_html=True)
 
-# ==================== FX + placeholders MPR ====================
+# ==================== FX + (placeholders MPR) ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
         j = requests.get("https://api.exchangerate.host/latest",
                          params={"base":"USD","symbols":"MXN"}, timeout=8).json()
-        return float(j["rates"]["MXN"])
+        val = float(j["rates"]["MXN"])
+        st.session_state["fx_last"] = val
+        return val
     except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)
+        return st.session_state.get("fx_last", 18.50 + random.uniform(-0.2, 0.2))
 
 fx = get_fx()
-fx_delta = random.choice([+0.02, -0.02])
-live_cattle = 185.3 + random.uniform(-0.6,0.6)
-lean_hogs   = 94.9  + random.uniform(-0.6,0.6)
+fx_delta = random.choice([+0.02, -0.02])  # placeholder visual
+live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: conectar a LE=F (CME) y convertir a USD/cwt
+lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: conectar a HE=F (CME)
 lc_delta = random.choice([+0.25, -0.25])
 lh_delta = random.choice([+0.40, -0.40])
 
 # ==================== GRID PRINCIPAL ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# USD/MXN
+# Columna izquierda — USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -163,7 +194,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Res/Cerdo
+# Columna centro apilada — Res/Cerdo con delta a la derecha
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -187,7 +218,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Piezas de pollo
+# Columna derecha — Piezas de Pollo
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -200,34 +231,21 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)  # /grid
 
-# ==================== NOTICIA ====================
+# ==================== NOTICIA ÚNICA (breve/desarrollada) ====================
 noticias = [
-  "USDA: beef cutout estable; cortes medios firmes mientras rounds ceden ante menor demanda institucional.",
   "USMEF: exportaciones de cerdo a México se mantienen firmes; retailers sostienen hams pese a presión de costos.",
+  "USDA: beef cutout estable; cortes medios continúan firmes mientras rounds ceden ante menor demanda institucional.",
   "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable en contratos y spot limitado.",
-  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete."
+  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete/financiamiento."
 ]
 k = int(time.time()//30) % len(noticias)
-news_text = noticias[k]
-
-st.markdown(
-    f"""
-    <div class='tape-news'>
-      <div class='tape-news-track'>
-        <div class='tape-news-group'><span class='item'>{news_text}</span></div>
-        <div class='tape-news-group' aria-hidden='true'><span class='item'>{news_text}</span></div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True
-)
+st.markdown(f"<div class='card footer'><div class='news-main'>{noticias[k]}</div></div>",
+            unsafe_allow_html=True)
 
 # ==================== PIE ====================
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh {REFRESH_MS//1000}s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
 )
-
-time.sleep(60)
-st.rerun()
