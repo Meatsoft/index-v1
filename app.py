@@ -1,10 +1,10 @@
-# app.py — LaSultana Meat Index (logo 440px centrado, cinta 260s, placeholder inmediato, noticia breve)
+# app.py — LaSultana Meat Index (logo robusto, cinta inmediata y lenta, 1 noticia breve)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# ---------- ESTILOS ----------
+# ====================== ESTILOS ======================
 st.markdown("""
 <style>
 :root{
@@ -15,11 +15,10 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
 
-/* LOGO: centrado real */
+/* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:8px 0 12px}
-.logo-fixed{width:440px!important;height:auto;display:block}
 
-/* CINTA: 18% más lenta (260s) y siempre visible */
+/* CINTA (18% más lenta: 260s) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
 .tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
             font-family:ui-monospace,Menlo,Consolas,monospace;
@@ -37,20 +36,20 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
 
-/* Tabla pollo */
+/* TABLA POLLO */
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* Noticia única */
+/* NOTICIA ÚNICA */
 .footer{margin-top:12px}
 .news-main{font-size:24px;font-weight:800}
 .caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------- Helpers (coma decimal) ----------
+# ==================== HELPERS ====================
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -58,7 +57,14 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ---------- CINTA: placeholder INMEDIATO (antes de cualquier red) ----------
+# ==================== LOGO (ROBUSTO) ====================
+st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
+if os.path.exists("ILSMeatIndex.png"):
+    # st.image es robusto con rutas locales en Streamlit Cloud
+    st.image("ILSMeatIndex.png", width=440)
+st.markdown("</div>", unsafe_allow_html=True)
+
+# ==================== CINTA (VISIBLE AL INSTANTE) ====================
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -67,43 +73,47 @@ COMPANIES = [
     ("Seaboard","SEB"), ("Hormel Foods","HRL"),
     ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
-placeholder_base = "".join(
+
+# 1) Placeholder inmediato (cero parpadeo)
+placeholder_text = "".join(
     f"<span class='item'>{n} ({s}) <b class='green'>-- ▲ --</b></span>" for n,s in COMPANIES
 )
-tape_slot = st.empty()
-tape_slot.markdown(f"<div class='tape'><div class='tape-inner'>{placeholder_base*10}</div></div>",
-                   unsafe_allow_html=True)
-
-# ---------- LOGO (centrado y tamaño exacto) ----------
-if os.path.exists("ILSMeatIndex.png"):
-    st.markdown(f"<div class='logo-row'><img src='ILSMeatIndex.png' class='logo-fixed'></div>",
+tape_block = st.container()
+with tape_block:
+    st.markdown(f"<div class='tape'><div class='tape-inner'>{placeholder_text*10}</div></div>",
                 unsafe_allow_html=True)
 
-# ---------- Datos bursátiles ----------
 @st.cache_data(ttl=75)
 def fetch_quotes():
-    out=[]
+    data=[]
     for name, sym in COMPANIES:
         try:
-            h = yf.Ticker(sym).history(period="1d", interval="1m")
-            if h is None or h.empty: raise ValueError("no data")
-            last = float(h["Close"].dropna().iloc[-1])
-            first= float(h["Close"].dropna().iloc[0])
-            ch   = last - first
+            hist = yf.Ticker(sym).history(period="1d", interval="1m")
+            if hist is None or hist.empty: raise ValueError("no data")
+            last  = float(hist["Close"].dropna().iloc[-1])
+            first = float(hist["Close"].dropna().iloc[0])
+            ch    = last - first
         except Exception:
             last = round(40 + random.random()*80, 2)
             ch   = round(random.uniform(-1.5, 1.5), 2)
-        out.append({"name":name,"sym":sym,"px":last,"ch":ch})
-    return out
+        data.append({"name":name,"sym":sym,"px":last,"ch":ch})
+    return data
 
-rows = fetch_quotes()
-base = ""
-for r in rows:
-    cls = "green" if r["ch"]>=0 else "red"; arrow = "▲" if r["ch"]>=0 else "▼"
-    base += f"<span class='item'>{r['name']} ({r['sym']}) <b class='{cls}'>{r['px']:.2f} {arrow} {abs(r['ch']):.2f}</b></span>"
-tape_slot.markdown(f"<div class='tape'><div class='tape-inner'>{base*10}</div></div>", unsafe_allow_html=True)
+# 2) Reemplazo sin borrar el bloque
+quotes = fetch_quotes()
+line = ""
+for q in quotes:
+    cls = "green" if q["ch"]>=0 else "red"
+    arrow = "▲" if q["ch"]>=0 else "▼"
+    line += (
+        f"<span class='item'>{q['name']} ({q['sym']}) "
+        f"<b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
+    )
+with tape_block:
+    st.markdown(f"<div class='tape'><div class='tape-inner'>{line*10}</div></div>",
+                unsafe_allow_html=True)
 
-# ---------- FX + placeholders MPR ----------
+# ==================== FX + (placeholders MPR) ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -113,15 +123,17 @@ def get_fx():
     except Exception:
         return 18.50 + random.uniform(-0.2, 0.2)
 
-fx = get_fx(); fx_delta = random.choice([+0.02, -0.02])
-live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
-lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
-lc_delta = random.choice([+0.25, -0.25]); lh_delta = random.choice([+0.40, -0.40])
+fx = get_fx()
+fx_delta = random.choice([+0.02, -0.02])
+live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: conectar a AMS/MPR
+lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: conectar a AMS/MPR
+lc_delta = random.choice([+0.25, -0.25])
+lh_delta = random.choice([+0.40, -0.40])
 
-# ---------- GRID ----------
+# ==================== GRID PRINCIPAL ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# USD/MXN
+# Columna izquierda — USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -134,7 +146,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Centro
+# Columna centro apilada — Res/Cerdo con delta a la derecha
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -158,9 +170,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Derecha
+# Columna derecha — Piezas de Pollo
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
-rows_html = "".join(f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items())
+rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
 <div class="card">
   <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo</div>
@@ -171,19 +183,20 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)  # /grid
 
-# ---------- Noticia única (un poco más desarrollada pero breve) ----------
+# ==================== NOTICIA ÚNICA (breve/desarrollada) ====================
 noticias = [
-  "USMEF: exportaciones de cerdo a México se mantienen firmes; cadenas retail sostienen hams pese a costos logísticos.",
-  "USDA: beef cutout estable; cortes medios firmes mientras rounds ceden por menor demanda institucional.",
-  "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo se mantiene estable en contratos.",
-  "FX: fortaleza del peso abarata importaciones; revisar spreads USD/lb→MXN/kg y costos de flete."
+  "USMEF: exportaciones de cerdo a México se mantienen firmes; retailers sostienen hams pese a presión de costos.",
+  "USDA: beef cutout estable; cortes medios continúan firmes mientras rounds ceden ante menor demanda institucional.",
+  "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable en contratos y spot limitado.",
+  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete/financiamiento."
 ]
 k = int(time.time()//30) % len(noticias)
-st.markdown(f"<div class='card footer'><div class='news-main'>{noticias[k]}</div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='card footer'><div class='news-main'>{noticias[k]}</div></div>",
+            unsafe_allow_html=True)
 
-# ---------- Pie ----------
+# ==================== PIE + AUTO-REFRESH ====================
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
