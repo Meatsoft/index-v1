@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (paddings corregidos uniformes)
+# app.py — LaSultana Meat Index (USD/MXN sin simulaciones)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -35,7 +35,7 @@ footer {visibility:hidden;}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 .item{display:inline-block;margin:0 32px}
-@keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}
 
 /* -------- GRID -------- */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
@@ -60,8 +60,8 @@ footer {visibility:hidden;}
   background:#0d141a;
   overflow:hidden;
   min-height:52px;
-  margin-top:0;         /* ✅ ya no doble aire */
-  margin-bottom:18px;   /* ✅ igual que las cards */
+  margin-top:0;
+  margin-bottom:18px;
 }
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
@@ -84,7 +84,7 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR ====================
+# ==================== CINTA SUPERIOR (UNA sola, la real) ====================
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -105,17 +105,20 @@ def fetch_quotes():
             first = float(h["Close"].dropna().iloc[0])
             ch    = last - first
         except Exception:
-            last = round(40 + random.random()*80, 2)
-            ch   = round(random.uniform(-1.5, 1.5), 2)
+            last = None; ch = None
         out.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return out
 
 quotes = fetch_quotes()
 line = ""
 for q in quotes:
-    cls = "green" if q["ch"]>=0 else "red"
-    arrow = "▲" if q["ch"]>=0 else "▼"
-    line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
+    if q["px"] is None:
+        line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='muted'>— — —</b></span>"
+    else:
+        cls = "green" if (q["ch"] or 0)>=0 else "red"
+        arrow = "▲" if (q["ch"] or 0)>=0 else "▼"
+        ch_abs = abs(q["ch"]) if q["ch"] is not None else 0.00
+        line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {ch_abs:.2f}</b></span>"
 
 st.markdown(
     f"""
@@ -132,34 +135,46 @@ st.markdown(
 @st.cache_data(ttl=75)
 def get_fx():
     try:
-        j = requests.get("https://api.exchangerate.host/latest",
-                         params={"base":"USD","symbols":"MXN"}, timeout=8).json()
+        j = requests.get(
+            "https://api.exchangerate.host/latest",
+            params={"base":"USD","symbols":"MXN"},
+            timeout=8
+        ).json()
         return float(j["rates"]["MXN"])
     except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)
+        return None  # 🔥 sin simulación
 
 fx = get_fx()
-fx_delta = random.choice([+0.02, -0.02])
-live_cattle = 185.3 + random.uniform(-0.6,0.6)
-lean_hogs   = 94.9  + random.uniform(-0.6,0.6)
-lc_delta = random.choice([+0.25, -0.25])
+
+live_cattle = 185.3 + random.uniform(-0.6,0.6)  # placeholder temporal
+lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # placeholder temporal
+lc_delta = random.choice([+0.25, -0.25])        # (se reemplazará al cablear CME)
 lh_delta = random.choice([+0.40, -0.40])
 
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
+
+# USD/MXN (izquierda) — sin simulaciones ni delta inventado
+if fx is None:
+    fx_value_html = "<div class='big red'>—</div>"
+    fx_delta_html = "<div class='delta muted'>sin dato</div>"
+else:
+    fx_value_html = f"<div class='big green'>{fmt4(fx)}</div>"
+    fx_delta_html = ""  # si quieres delta real luego, lo agregamos
 
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
     <div class="left">
       <div class="title">USD/MXN</div>
-      <div class="big green">{fmt4(fx)}</div>
-      <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
+      {fx_value_html}
+      {fx_delta_html}
     </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+# Res / Cerdo (centro apilado)
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -183,6 +198,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Piezas de pollo (derecha)
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -220,7 +236,7 @@ st.markdown(
 
 # ==================== PIE ====================
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuente: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuente: USDA · USMEF · Yahoo Finance · exchangerate.host.</div>",
   unsafe_allow_html=True,
 )
 
