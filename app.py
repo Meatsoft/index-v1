@@ -1,20 +1,20 @@
-# app.py — LaSultana Meat Index (layout igual al mock)
+# app.py — LaSultana Meat Index (Fix Pack)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# ========== ESTILO (alto contraste, igual a mock) ==========
+# ======= ESTILO =======
 st.markdown("""
 <style>
 :root{
-  --bg:#090f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
-  --up:#25d07d; --down:#ff6b6b; --header:#dff6e9;
+  --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
+  --up:#25d07d; --down:#ff6b6b;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .block-container{max-width:1400px;padding-top:8px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
-.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px} /* 3 columnas */
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .centerstack .box{margin-bottom:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .left{display:flex;flex-direction:column;gap:6px}
@@ -22,14 +22,14 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .kpi .big{font-size:48px;font-weight:900}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-/* Logo controlado */
-.logo-wrap{display:flex;justify-content:center;margin:12px 0 18px 0}
-.logo{max-width:320px;height:auto}
-/* Cinta bursátil lenta */
-.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden}
-.tape-inner{display:inline-block;white-space:nowrap;padding:8px 0;
+/* Logo centrado y estable */
+.logo-wrap{display:flex;justify-content:center;margin:10px 0 14px}
+.logo img{max-width:320px;height:auto;display:block}
+/* Cinta bursátil lenta y constante */
+.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
+.tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
             font-family:ui-monospace,Menlo,Consolas,monospace;
-            animation:scroll 100s linear infinite}
+            animation:scroll 120s linear infinite}
 .item{display:inline-block;margin:0 32px}
 @keyframes scroll{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
 /* Tabla pollo */
@@ -37,7 +37,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
-/* Footer noticias */
+/* Noticias grandes */
 .footer{margin-top:12px}
 .news-main{font-size:18px}
 .news-sub{font-size:16px;color:var(--muted)}
@@ -45,7 +45,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 </style>
 """, unsafe_allow_html=True)
 
-# ========= Helpers de formateo (coma decimal) =========
+# ======= Helpers (coma decimal) =======
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -53,29 +53,26 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ========== Logo centrado ==========
+# ======= Logo (centrado con st.image, no se pierde) =======
+st.markdown('<div class="logo-wrap"><div class="logo">', unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
-    st.markdown(f'<div class="logo-wrap"><img src="ILSMeatIndex.png" class="logo"/></div>', unsafe_allow_html=True)
+    st.image("ILSMeatIndex.png", use_column_width=False)
+st.markdown('</div></div>', unsafe_allow_html=True)
 
-# ========== Cinta bursátil (14 empresas) ==========
+# ======= Cinta bursátil (14 empresas, lenta, fallback) =======
 COMPANIES = [
-    ("Tyson Foods","TSN"),
-    ("Pilgrim’s Pride","PPC"),
-    ("BRF","BRFS"),
-    ("Cal-Maine Foods","CALM"),
-    ("Vital Farms","VITL"),
-    ("JBS","JBS"),                # si falla, prueba JBSAY
-    ("Marfrig Global","MRRTY"),   # o MRFG3.SA
-    ("Minerva","MRVSY"),          # o BEEF3.SA
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
+    ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
+    ("JBS","JBS"),               # si falla, usar "JBSAY"
+    ("Marfrig Global","MRRTY"),  # o "MRFG3.SA"
+    ("Minerva","MRVSY"),         # o "BEEF3.SA"
     ("Grupo Bafar","BAFARB.MX"),
-    ("Smithfield (WH)","WHGLY"),  # proxy
-    ("Seaboard","SEB"),
-    ("Hormel Foods","HRL"),
-    ("Grupo KUO","KUOB.MX"),
-    ("Maple Leaf Foods","MFI.TO"),
+    ("Smithfield (WH)","WHGLY"), # proxy
+    ("Seaboard","SEB"), ("Hormel Foods","HRL"),
+    ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
 
-@st.cache_data(ttl=90)
+@st.cache_data(ttl=75)
 def get_quotes():
     out=[]
     for name, sym in COMPANIES:
@@ -84,27 +81,32 @@ def get_quotes():
             if h is None or h.empty: raise ValueError("no data")
             last = float(h["Close"].dropna().iloc[-1])
             first= float(h["Close"].dropna().iloc[0])
-            ch = last - first
+            ch   = last - first
         except Exception:
             last = round(40 + random.random()*80, 2)
             ch   = round(random.uniform(-1.5, 1.5), 2)
         out.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return out
 
-eq = get_quotes()
-ticker_html = ""
-for _ in range(2):  # duplicado para scroll infinito
+# Mantén la última cinta en memoria por si Yahoo falla puntualmente
+if "last_tape" not in st.session_state:
+    st.session_state.last_tape = get_quotes()
+eq = get_quotes() or st.session_state.last_tape
+st.session_state.last_tape = eq
+
+line = ""
+for _ in range(2):  # duplicado para loop continuo
     for r in eq:
         cls = "green" if r["ch"]>=0 else "red"
         arrow = "▲" if r["ch"]>=0 else "▼"
-        ticker_html += (
+        line += (
             f"<span class='item'>{r['name']} ({r['sym']}) "
             f"<b class='{cls}'>{r['px']:.2f} {arrow} {abs(r['ch']):.2f}</b></span>"
         )
-st.markdown(f"<div class='tape'><div class='tape-inner'>{ticker_html}</div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='tape'><div class='tape-inner'>{line}</div></div>", unsafe_allow_html=True)
 
-# ========== Datos FX (gratis) ==========
-@st.cache_data(ttl=90)
+# ======= Datos (FX real + placeholders para AMS/MPR) =======
+@st.cache_data(ttl=75)
 def get_fx():
     try:
         j = requests.get("https://api.exchangerate.host/latest",
@@ -116,13 +118,12 @@ def get_fx():
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# Placeholders (conectar luego a AMS/MPR)
-live_cattle = 185.32 + random.uniform(-0.6,0.6)
-lean_hogs   = 94.86  + random.uniform(-0.6,0.6)
+live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
+lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
 lc_delta = random.choice([+0.25, -0.25])
 lh_delta = random.choice([+0.40, -0.40])
 
-# ========== Grid principal (3 columnas) ==========
+# ======= Grid principal (3 columnas, como tu foto) =======
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
 # Columna izquierda — USD/MXN (número verde grande + delta debajo)
@@ -138,7 +139,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Columna central apilada — Res en pie / Cerdo en pie, delta a la derecha
+# Columna central apilada — Res/Cerdo con delta a la derecha
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -177,7 +178,7 @@ st.markdown(f"""
 
 st.markdown("</div>", unsafe_allow_html=True)  # /grid
 
-# ========== Noticias (dos líneas, rotación cada 30s en cliente) ==========
+# ======= Noticias (2 líneas grandes, rotación cada 30s) =======
 news = [
   "USMEF: exportaciones de cerdo a México continúan firmes; demanda retail sostiene hams.",
   "USDA: beef cutout estable; middle meats firmes; rounds suaves.",
@@ -193,10 +194,11 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ========== Pie + auto-refresh ==========
+# ======= Pie + auto-refresh =======
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
 )
+
 time.sleep(60)
 st.rerun()
