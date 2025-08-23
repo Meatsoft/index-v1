@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (marquee continuo + logo padding simétrico)
+# app.py — LaSultana Meat Index (bandas 15% más rápidas)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -18,9 +18,9 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 /* -------- LOGO: padding simétrico -------- */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:22px 0 22px}
 
-/* -------- CINTA SUPERIOR (marquee continuo, 312s) -------- */
+/* -------- CINTA SUPERIOR (marquee continuo, ahora 265s) -------- */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
-.tape-track{display:flex;width:max-content;will-change:transform;animation:marquee 312s linear infinite}
+.tape-track{display:flex;width:max-content;will-change:transform;animation:marquee 265s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 .item{display:inline-block;margin:0 32px}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -41,11 +41,11 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* -------- NOTICIA (marquee continuo, 264s) -------- */
+/* -------- NOTICIA (marquee continuo, ahora 224s) -------- */
 .footer{margin-top:12px}
 .caption{color:var(--muted)!important}
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-top:10px}
-.tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNews 264s linear infinite}
+.tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNews 224s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 </style>
@@ -59,13 +59,13 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ==================== LOGO (ROBUSTO) ====================
+# ==================== LOGO ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (siempre visible) ====================
+# ==================== CINTA SUPERIOR ====================
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -75,7 +75,7 @@ COMPANIES = [
     ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
 
-# Placeholder inmediato (sin huecos)
+# Placeholder inmediato
 placeholder = "".join(
     f"<span class='item'>{n} ({s}) <b class='green'>-- ▲ --</b></span>" for n,s in COMPANIES
 )
@@ -118,7 +118,6 @@ for q in quotes:
         f"<b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
     )
 
-# Reemplazo en el mismo bloque (doble pista → loop perfecto)
 with tape_block:
     st.markdown(
         f"""
@@ -151,7 +150,7 @@ lh_delta = random.choice([+0.40, -0.40])
 # ==================== GRID PRINCIPAL ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# USD/MXN (izquierda)
+# USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -164,7 +163,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Res/Cerdo (centro apilado)
+# Res/Cerdo
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -188,7 +187,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Piezas de pollo (derecha)
+# Piezas de pollo
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -201,9 +200,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-st.markdown("</div>", unsafe_allow_html=True)  # /grid
+st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== NOTICIA (marquee continuo) ====================
+# ==================== NOTICIA ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes mientras rounds ceden ante menor demanda institucional.",
   "USMEF: exportaciones de cerdo a México se mantienen firmes; retailers sostienen hams pese a presión de costos.",
