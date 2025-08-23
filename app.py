@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (con header y footer ocultos, +10% velocidad)
+# app.py — LaSultana Meat Index (footer más grande + mensajes más largos)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -49,9 +49,9 @@ footer {visibility:hidden;}
 /* -------- NOTICIA (marquee continuo, 177s) -------- */
 .footer{margin-top:12px}
 .caption{color:var(--muted)!important}
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-top:10px}
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin-top:12px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
-.tape-news-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
+.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 </style>
 """, unsafe_allow_html=True)
@@ -185,10 +185,10 @@ st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== NOTICIA ====================
 noticias = [
-  "USDA: beef cutout estable; cortes medios firmes mientras rounds ceden ante menor demanda institucional.",
-  "USMEF: exportaciones de cerdo a México se mantienen firmes; retailers sostienen hams pese a presión de costos.",
-  "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable en contratos y spot limitado.",
-  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete."
+  "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
+  "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
+  "Poultry: oferta amplia presiona piezas oscuras, pero la pechuga jumbo se mantiene estable en contratos mayoristas.",
+  "FX: fortaleza del peso abarata importaciones; revisar spreads USD/lb→MXN/kg y el impacto en costos logísticos."
 ]
 k = int(time.time()//30) % len(noticias)
 news_text = noticias[k]
@@ -206,7 +206,7 @@ st.markdown(
 
 # ==================== PIE ====================
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuente: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
 )
 
