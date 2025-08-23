@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (logo estable, cinta lenta y continua, noticias grandes)
+# app.py — LaSultana Meat Index (logo centrado+, cinta inmediata+lenta, 1 noticia)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -12,7 +12,7 @@ st.markdown("""
   --up:#25d07d; --down:#ff6b6b;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
-.block-container{max-width:1400px;padding-top:8px}
+.block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
 
 /* GRID PRINCIPAL */
@@ -25,14 +25,16 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
 
-/* LOGO: SIEMPRE visible y centrado (300px) */
-.logo-wrap{margin:8px 0 12px 0}
+/* LOGO centrado y más grande (360px) */
+.logo-spacer{height:6px}
+.logo-center{display:flex;justify-content:center}
+.logo-fixed{width:360px!important;height:auto;display:block}
 
-/* CINTA: lenta, continua, sin huecos */
+/* CINTA: lenta, continua, visible desde el primer instante */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
 .tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
             font-family:ui-monospace,Menlo,Consolas,monospace;
-            animation:scroll 180s linear infinite}       /* MUCHO más lenta */
+            animation:scroll 220s linear infinite}          /* más lenta */
 .item{display:inline-block;margin:0 32px}
 @keyframes scroll{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
 
@@ -42,10 +44,9 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* Noticias GRANDES */
+/* Noticia ÚNICA (grande) */
 .footer{margin-top:12px}
-.news-main{font-size:26px;font-weight:800}
-.news-sub{font-size:20px;color:var(--muted)}
+.news-main{font-size:24px;font-weight:800}
 .caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
@@ -58,25 +59,31 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ======= LOGO (centrado con columns + tamaño fijo) =======
-c1, c2, c3 = st.columns([1,3,1])
+# ======= LOGO (centrado perfecto) =======
+st.markdown('<div class="logo-spacer"></div>', unsafe_allow_html=True)
+c1,c2,c3 = st.columns([1,3,1])
 with c2:
     if os.path.exists("ILSMeatIndex.png"):
-        st.image("ILSMeatIndex.png", width=300)   # ← estable, no se pierde
-st.markdown('<div class="logo-wrap"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="logo-center">', unsafe_allow_html=True)
+        st.image("ILSMeatIndex.png", width=360, output_format="PNG")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-# ======= CINTA BURSÁTIL (14 empresas) =======
+# ======= CINTA BURSÁTIL =======
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("JBS","JBS"),               # si falla, "JBSAY"
-    ("Marfrig Global","MRRTY"),  # o "MRFG3.SA"
-    ("Minerva","MRVSY"),         # o "BEEF3.SA"
-    ("Grupo Bafar","BAFARB.MX"),
-    ("Smithfield (WH)","WHGLY"), # proxy
+    ("JBS","JBS"), ("Marfrig Global","MRRTY"), ("Minerva","MRVSY"),
+    ("Grupo Bafar","BAFARB.MX"), ("Smithfield (WH)","WHGLY"),
     ("Seaboard","SEB"), ("Hormel Foods","HRL"),
     ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
+
+# 1) Pintamos placeholder INMEDIATO para que no quede vacío
+placeholder_line = "".join(
+    [f"<span class='item'>{n} ({s}) <b class='green'>-- ▲ --</b></span>" for n,s in COMPANIES]
+) * 8
+tape_slot = st.empty()
+tape_slot.markdown(f"<div class='tape'><div class='tape-inner'>{placeholder_line}</div></div>", unsafe_allow_html=True)
 
 @st.cache_data(ttl=75)
 def fetch_quotes():
@@ -94,31 +101,16 @@ def fetch_quotes():
         out.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return out
 
-# Placeholder para que JAMÁS esté vacío al abrir
-PLACEHOLDER = [{"name": n, "sym": s, "px": 0.00, "ch": 0.00} for n,s in COMPANIES]
-
-if "last_tape" not in st.session_state:
-    st.session_state.last_tape = PLACEHOLDER
-
+# 2) Reemplazamos placeholder por datos sin dejar huecos
 rows = fetch_quotes()
-if not rows:
-    rows = st.session_state.last_tape
-else:
-    st.session_state.last_tape = rows
-
-# Construimos línea y la repetimos ×10 para continuidad total
-def tape_html(items, repeats=10):
-    base = ""
-    for r in items:
-        cls = "green" if r["ch"]>=0 else "red"
-        arrow = "▲" if r["ch"]>=0 else "▼"
-        price = f"{r['px']:.2f}" if r['px'] else "--"
-        change = f"{abs(r['ch']):.2f}" if r['px'] else "--"
-        base += (f"<span class='item'>{r['name']} ({r['sym']}) "
-                 f"<b class='{cls}'>{price} {arrow} {change}</b></span>")
-    return base * repeats
-
-st.markdown(f"<div class='tape'><div class='tape-inner'>{tape_html(rows, repeats=10)}</div></div>", unsafe_allow_html=True)
+base = ""
+for r in rows:
+    cls = "green" if r["ch"]>=0 else "red"
+    arrow = "▲" if r["ch"]>=0 else "▼"
+    base += (f"<span class='item'>{r['name']} ({r['sym']}) "
+             f"<b class='{cls}'>{r['px']:.2f} {arrow} {abs(r['ch']):.2f}</b></span>")
+tape_line = base * 8
+tape_slot.markdown(f"<div class='tape'><div class='tape-inner'>{tape_line}</div></div>", unsafe_allow_html=True)
 
 # ======= Datos (FX real + placeholders MPR) =======
 @st.cache_data(ttl=75)
@@ -132,7 +124,6 @@ def get_fx():
 
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
-
 live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
 lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: AMS/MPR
 lc_delta = random.choice([+0.25, -0.25])
@@ -141,7 +132,7 @@ lh_delta = random.choice([+0.40, -0.40])
 # ======= GRID PRINCIPAL =======
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# Izquierda — USD/MXN (verde grande)
+# Izquierda — USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -193,19 +184,17 @@ st.markdown(f"""
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ======= Noticias grandes (2 líneas, rotación 30s) =======
+# ======= Noticia ÚNICA (más grande) =======
 news = [
   "USMEF: exportaciones de cerdo a México continúan firmes; demanda retail sostiene hams.",
   "USDA: beef cutout estable; middle meats firmes; rounds suaves.",
   "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable.",
   "FX: fortaleza del peso abarata importaciones; revisar spreads USD/lb → MXN/kg."
 ]
-i = int(time.time()//30) % len(news)
-j = (i+1) % len(news)
+k = int(time.time()//30) % len(news)
 st.markdown(f"""
 <div class="card footer">
-  <div class="news-main">{news[i]}</div>
-  <div class="news-sub">{news[j]}</div>
+  <div class="news-main">{news[k]}</div>
 </div>
 """, unsafe_allow_html=True)
 
