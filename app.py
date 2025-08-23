@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (footer más grande + mensajes más largos)
+# app.py — LaSultana Meat Index (padding uniforme)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -13,7 +13,14 @@ st.markdown("""
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:14px;
+  margin-bottom:18px; /* separación fija entre TODOS los contenedores */
+}
+.grid .card:last-child{margin-bottom:0}
 
 /* --- Ocultar header, menú y footer de Streamlit --- */
 header[data-testid="stHeader"] {display:none;}
@@ -21,10 +28,10 @@ header[data-testid="stHeader"] {display:none;}
 footer {visibility:hidden;}
 
 /* -------- LOGO -------- */
-.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:40px 0 28px}
+.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* -------- CINTA SUPERIOR (marquee continuo, 210s) -------- */
-.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
+/* -------- CINTA SUPERIOR -------- */
+.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 .item{display:inline-block;margin:0 32px}
@@ -32,7 +39,7 @@ footer {visibility:hidden;}
 
 /* -------- GRID -------- */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
-.centerstack .box{margin-bottom:12px}
+.centerstack .box{margin-bottom:18px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .left{display:flex;flex-direction:column;gap:6px}
 .kpi .title{font-size:18px;color:var(--muted)}
@@ -46,10 +53,10 @@ footer {visibility:hidden;}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* -------- NOTICIA (marquee continuo, 177s) -------- */
-.footer{margin-top:12px}
+/* -------- NOTICIA -------- */
+.footer{margin-top:18px}
 .caption{color:var(--muted)!important}
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin-top:12px}
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin-top:18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
