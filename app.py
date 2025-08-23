@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (logo robusto, cinta inmediata y lenta, 1 noticia breve)
+# app.py — LaSultana Meat Index (velocidades ajustadas: arriba 312s, abajo 264s)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -18,11 +18,11 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:8px 0 12px}
 
-/* CINTA (18% más lenta: 260s) */
+/* CINTA SUPERIOR (20% más lenta → 312s) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px}
 .tape-inner{display:inline-block;white-space:nowrap;padding:10px 0;
             font-family:ui-monospace,Menlo,Consolas,monospace;
-            animation:scroll 260s linear infinite}
+            animation:scroll 312s linear infinite}
 .item{display:inline-block;margin:0 32px}
 @keyframes scroll{0%{transform:translateX(100%)}100%{transform:translateX(-100%)}}
 
@@ -42,10 +42,14 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* NOTICIA ÚNICA */
+/* NOTICIA (20% más lenta → 264s) */
 .footer{margin-top:12px}
 .news-main{font-size:24px;font-weight:800}
 .caption{color:var(--muted)!important}
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-top:10px}
+.tape-news-inner{display:inline-block;white-space:nowrap;padding:10px 0;
+                 font-family:ui-monospace,Menlo,Consolas,monospace;
+                 animation:scroll 264s linear infinite}
 </style>
 """, unsafe_allow_html=True)
 
@@ -60,11 +64,10 @@ def fmt4(x: float) -> str:
 # ==================== LOGO (ROBUSTO) ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
-    # st.image es robusto con rutas locales en Streamlit Cloud
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA (VISIBLE AL INSTANTE) ====================
+# ==================== CINTA SUPERIOR ====================
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -74,7 +77,6 @@ COMPANIES = [
     ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
 
-# 1) Placeholder inmediato (cero parpadeo)
 placeholder_text = "".join(
     f"<span class='item'>{n} ({s}) <b class='green'>-- ▲ --</b></span>" for n,s in COMPANIES
 )
@@ -99,7 +101,6 @@ def fetch_quotes():
         data.append({"name":name,"sym":sym,"px":last,"ch":ch})
     return data
 
-# 2) Reemplazo sin borrar el bloque
 quotes = fetch_quotes()
 line = ""
 for q in quotes:
@@ -125,15 +126,14 @@ def get_fx():
 
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
-live_cattle = 185.3 + random.uniform(-0.6,0.6)  # TODO: conectar a AMS/MPR
-lean_hogs   = 94.9  + random.uniform(-0.6,0.6)  # TODO: conectar a AMS/MPR
+live_cattle = 185.3 + random.uniform(-0.6,0.6)
+lean_hogs   = 94.9  + random.uniform(-0.6,0.6)
 lc_delta = random.choice([+0.25, -0.25])
 lh_delta = random.choice([+0.40, -0.40])
 
 # ==================== GRID PRINCIPAL ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# Columna izquierda — USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -146,7 +146,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Columna centro apilada — Res/Cerdo con delta a la derecha
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -170,7 +169,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Columna derecha — Piezas de Pollo
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -185,18 +183,23 @@ st.markdown(f"""
 
 st.markdown("</div>", unsafe_allow_html=True)  # /grid
 
-# ==================== NOTICIA ÚNICA (breve/desarrollada) ====================
+# ==================== NOTICIA (CINTA INFERIOR) ====================
 noticias = [
   "USMEF: exportaciones de cerdo a México se mantienen firmes; retailers sostienen hams pese a presión de costos.",
-  "USDA: beef cutout estable; cortes medios continúan firmes mientras rounds ceden ante menor demanda institucional.",
+  "USDA: beef cutout estable; cortes medios firmes mientras rounds ceden ante menor demanda institucional.",
   "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable en contratos y spot limitado.",
-  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete/financiamiento."
+  "FX: peso fuerte abarata importaciones; revisa spreads USD/lb→MXN/kg y costos de flete."
 ]
 k = int(time.time()//30) % len(noticias)
-st.markdown(f"<div class='card footer'><div class='news-main'>{noticias[k]}</div></div>",
-            unsafe_allow_html=True)
+news_text = noticias[k]
 
-# ==================== PIE + AUTO-REFRESH ====================
+st.markdown(f"""
+<div class="tape-news">
+  <div class="tape-news-inner"><span class='item'>{news_text}</span></div>
+</div>
+""", unsafe_allow_html=True)
+
+# ==================== PIE ====================
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Bursátil vía Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
