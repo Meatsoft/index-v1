@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (padding uniforme)
+# app.py — LaSultana Meat Index (paddings corregidos uniformes)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -18,7 +18,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
   border:1px solid var(--line);
   border-radius:10px;
   padding:14px;
-  margin-bottom:18px; /* separación fija entre TODOS los contenedores */
+  margin-bottom:18px; /* separación fija para TODOS */
 }
 .grid .card:last-child{margin-bottom:0}
 
@@ -54,12 +54,19 @@ footer {visibility:hidden;}
 .table td:last-child{text-align:right}
 
 /* -------- NOTICIA -------- */
-.footer{margin-top:18px}
-.caption{color:var(--muted)!important}
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin-top:18px}
+.tape-news{
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:#0d141a;
+  overflow:hidden;
+  min-height:52px;
+  margin-top:0;         /* ✅ ya no doble aire */
+  margin-bottom:18px;   /* ✅ igual que las cards */
+}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
 
