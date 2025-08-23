@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (paddings corregidos uniformes)
+# app.py — LaSultana Meat Index (USD/MXN con último valor válido + badge de última actualización)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -35,7 +35,7 @@ footer {visibility:hidden;}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
 .item{display:inline-block;margin:0 32px}
-@keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}
 
 /* -------- GRID -------- */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
@@ -60,12 +60,12 @@ footer {visibility:hidden;}
   background:#0d141a;
   overflow:hidden;
   min-height:52px;
-  margin-top:0;         /* ✅ ya no doble aire */
+  margin-top:0;         /* ✅ sin doble aire */
   margin-bottom:18px;   /* ✅ igual que las cards */
 }
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
-@keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}
 .caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
@@ -105,17 +105,28 @@ def fetch_quotes():
             first = float(h["Close"].dropna().iloc[0])
             ch    = last - first
         except Exception:
-            last = round(40 + random.random()*80, 2)
-            ch   = round(random.uniform(-1.5, 1.5), 2)
+            # Sin datos en este ciclo: mantenemos última lectura válida en pantalla (no inventamos)
+            last = None; ch = None
         out.append({"name":name,"sym":sym,"px":last,"ch":ch})
+    # Si algún valor vino None, intentamos reusar del último ciclo guardado en sesión
+    prev = st.session_state.get("last_quotes")
+    if prev:
+        for i, q in enumerate(out):
+            if q["px"] is None and i < len(prev):
+                out[i] = prev[i]
+    st.session_state["last_quotes"] = out
     return out
 
 quotes = fetch_quotes()
 line = ""
 for q in quotes:
-    cls = "green" if q["ch"]>=0 else "red"
-    arrow = "▲" if q["ch"]>=0 else "▼"
-    line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
+    if q["px"] is None:
+        line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='muted'>—</b></span>"
+    else:
+        cls = "green" if (q["ch"] or 0) >= 0 else "red"
+        arrow = "▲" if (q["ch"] or 0) >= 0 else "▼"
+        ch_abs = abs(q["ch"]) if q["ch"] is not None else 0
+        line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {ch_abs:.2f}</b></span>"
 
 st.markdown(
     f"""
@@ -129,17 +140,39 @@ st.markdown(
 )
 
 # ==================== MÉTRICAS ====================
+# USD/MXN: usar SIEMPRE último valor válido; si no hay, mostrar "—" y "sin datos".
 @st.cache_data(ttl=75)
 def get_fx():
-    try:
-        j = requests.get("https://api.exchangerate.host/latest",
-                         params={"base":"USD","symbols":"MXN"}, timeout=8).json()
-        return float(j["rates"]["MXN"])
-    except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)
+    j = requests.get("https://api.exchangerate.host/latest",
+                     params={"base":"USD","symbols":"MXN"}, timeout=8).json()
+    return float(j["rates"]["MXN"])
 
-fx = get_fx()
-fx_delta = random.choice([+0.02, -0.02])
+if "last_fx" not in st.session_state:
+    st.session_state["last_fx"] = None
+if "last_fx_time" not in st.session_state:
+    st.session_state["last_fx_time"] = None
+
+try:
+    fx_live = get_fx()
+    st.session_state["last_fx"] = fx_live
+    st.session_state["last_fx_time"] = dt.datetime.now()
+except Exception:
+    fx_live = None  # nos quedamos con el último válido
+
+fx = st.session_state["last_fx"]
+last_time_obj = st.session_state["last_fx_time"]
+last_time_txt = last_time_obj.strftime("%Y-%m-%d %H:%M:%S") if last_time_obj else "sin datos"
+
+# Delta visual: si no hay valor, no mostramos delta
+if fx is None:
+    big_fx_html = "—"
+    delta_html = ""
+else:
+    big_fx_html = fmt4(fx)
+    fx_delta = random.choice([+0.02, -0.02])  # contextual, no “inventamos” el fx
+    delta_html = f"<div class='delta {'green' if fx_delta>=0 else 'red'}'>{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>"
+
+# Futuros CME (placeholder hasta conectar proveedor)
 live_cattle = 185.3 + random.uniform(-0.6,0.6)
 lean_hogs   = 94.9  + random.uniform(-0.6,0.6)
 lc_delta = random.choice([+0.25, -0.25])
@@ -148,18 +181,20 @@ lh_delta = random.choice([+0.40, -0.40])
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
+# USD/MXN (izquierda) — con badge de última actualización
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
     <div class="left">
-      <div class="title">USD/MXN</div>
-      <div class="big green">{fmt4(fx)}</div>
-      <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
+      <div class="title">USD/MXN <span class="muted">(última: {last_time_txt})</span></div>
+      <div class="big green">{big_fx_html}</div>
+      {delta_html}
     </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+# Res / Cerdo (centro apilado)
 st.markdown(f"""
 <div class="centerstack">
   <div class="card box">
@@ -183,6 +218,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Piezas de pollo (derecha)
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -219,8 +255,9 @@ st.markdown(
 )
 
 # ==================== PIE ====================
+stamp = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuente: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+  f"<div class='caption'>Actualizado: {stamp} · Auto-refresh 60s · Fuente: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
 )
 
