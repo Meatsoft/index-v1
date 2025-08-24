@@ -1,7 +1,6 @@
 # app.py — LaSultana Meat Index
-# - Misma fuente en toda la app (ui-monospace).
-# - Unidades "USD/100 lb" 15% más pequeñas (sin "CME").
-# - Res/Cerdo muestran exactamente lo que Yahoo tenga (last + change).
+# Unifica tipografía, reduce 30% la unidad “USD/100 lb”, quita “(CME)”
+# Res/Cerdo: siempre mostramos lo que Yahoo muestre (last + change con su delay).
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -14,19 +13,11 @@ st.markdown("""
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b;
+  --font-sans: "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
-
-/* Fuente global tipo "sistema/robot" (igual a la cinta) */
-html,body,.stApp{
-  background:var(--bg)!important;
-  color:var(--txt)!important;
-  font-family: ui-monospace, Menlo, Consolas, "Liberation Mono", monospace !important;
-  font-size: 16px;
-}
-
+html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font-sans)!important}
+*{font-family:var(--font-sans)!important}
 .block-container{max-width:1400px;padding-top:12px}
-
-/* Tarjetas y layout */
 .card{
   background:var(--panel);
   border:1px solid var(--line);
@@ -36,7 +27,7 @@ html,body,.stApp{
 }
 .grid .card:last-child{margin-bottom:0}
 
-/* Ocultar UI de Streamlit */
+/* Ocultar UI streamlit */
 header[data-testid="stHeader"] {display:none;}
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
@@ -44,7 +35,7 @@ footer {visibility:hidden;}
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* CINTA SUPERIOR (bursátil) */
+/* CINTA SUPERIOR */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0}
@@ -55,29 +46,25 @@ footer {visibility:hidden;}
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .centerstack .box{margin-bottom:18px}
 
-/* KPIs */
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .left{display:flex;flex-direction:column;gap:6px}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900;line-height:1}
+.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-/* Unidad 15% más pequeña */
-.unit{color:var(--muted);font-size:85%;margin-left:6px}
+.unit{font-size:70%; color:var(--muted); font-weight:600; letter-spacing:.3px}
 
 /* TABLA POLLO */
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
-.table th{text-align:left;color:var(--muted);font-weight:700}
+.table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .table td:last-child{text-align:right}
 
-/* CINTA NOTICIAS (abajo) */
+/* NOTICIA */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-
-/* Pie */
 .caption{color:var(--muted)!important}
 </style>
 """, unsafe_allow_html=True)
@@ -93,17 +80,17 @@ def fmt4(x: float) -> str:
 # ==================== LOGO ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
-  st.image("ILSMeatIndex.png", width=440)
+    st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== CINTA SUPERIOR (bursátil real) ====================
 PRIMARY_COMPANIES = [
-  ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
-  ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-  ("JBS","JBS"), ("Marfrig Global","MRRTY"), ("Minerva","MRVSY"),
-  ("Grupo Bafar","BAFARB.MX"), ("WH Group (Smithfield)","WHGLY"),
-  ("Seaboard","SEB"), ("Hormel Foods","HRL"),
-  ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
+    ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
+    ("JBS","JBS"), ("Marfrig Global","MRRTY"), ("Minerva","MRVSY"),
+    ("Grupo Bafar","BAFARB.MX"), ("WH Group (Smithfield)","WHGLY"),
+    ("Seaboard","SEB"), ("Hormel Foods","HRL"),
+    ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
 ALTERNATES = [("Conagra Brands","CAG"), ("Sysco","SYY"), ("US Foods","USFD"),
               ("Cranswick","CWK.L"), ("NH Foods","2282.T")]
@@ -141,14 +128,14 @@ for q in quotes:
     ticker_line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
 
 st.markdown(
-  f"""
-  <div class='tape'>
-    <div class='tape-track'>
-      <div class='tape-group'>{ticker_line}</div>
-      <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
+    f"""
+    <div class='tape'>
+      <div class='tape-track'>
+        <div class='tape-group'>{ticker_line}</div>
+        <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
+      </div>
     </div>
-  </div>
-  """, unsafe_allow_html=True
+    """, unsafe_allow_html=True
 )
 
 # ==================== FX (con fallback suave) ====================
@@ -160,21 +147,23 @@ def get_fx():
         return float(j["rates"]["MXN"])
     except Exception:
         return 18.50 + random.uniform(-0.2, 0.2)
-
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# ==================== CME (LE=F / HE=F) — “lo que Yahoo muestre” ====================
+# ==================== CME: “lo que Yahoo muestre” (last + change) ====================
 @st.cache_data(ttl=75)
 def get_yahoo_last(sym: str):
     """
-    Devuelve exactamente lo que Yahoo tenga:
-      (last, change) o (None, None).
+    Tomamos last y change según lo expone Yahoo para el ticker.
+    Preferencias:
+      1) fast_info.last_price / previous_close
+      2) info['regularMarketPrice'] / info['regularMarketPreviousClose']
+      3) history diario para last/prev (fallback)
     """
     try:
         t = yf.Ticker(sym)
 
-        # 1) fast_info (rápido)
+        # 1) fast_info
         try:
             fi = t.fast_info
             last = fi.get("last_price", None)
@@ -194,7 +183,7 @@ def get_yahoo_last(sym: str):
         except Exception:
             pass
 
-        # 3) history (diario)
+        # 3) history diario (fallback)
         d = t.history(period="10d", interval="1d")
         if d is None or d.empty:
             return None, None
@@ -226,15 +215,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 2) Res / Cerdo
+# 2) Res / Cerdo (unidad 30% más chica y sin “(CME)”)
 def kpi_card(titulo: str, price, chg):
+    unit = "USD/100 lb"
     if price is None:
-        price_html = "<div class='big'>N/D <span class='unit'>USD/100 lb</span></div>"
+        price_html = f"<div class='big'>N/D <span class='unit'>{unit}</span></div>"
         delta_html = ""
     else:
         dir_cls   = "green" if (chg or 0) >= 0 else "red"
         dir_arrow = "▲"     if (chg or 0) >= 0 else "▼"
-        price_html = f"<div class='big'>{fmt2(price)} <span class='unit'>USD/100 lb</span></div>"
+        price_html = f"<div class='big'>{fmt2(price)} <span class='unit'>{unit}</span></div>"
         delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(chg))}</div>"
     return f"""
     <div class="card box">
@@ -268,7 +258,7 @@ st.markdown(f"""
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA NOTICIAS ====================
+# ==================== NOTICIA (placeholder rotativo) ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
   "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
@@ -278,14 +268,14 @@ noticias = [
 k = int(time.time()//30) % len(noticias)
 news_text = noticias[k]
 st.markdown(
-  f"""
-  <div class='tape-news'>
-    <div class='tape-news-track'>
-      <div class='tape-news-group'><span class='item'>{news_text}</span></div>
-      <div class='tape-news-group' aria-hidden='true'><span class='item'>{news_text}</span></div>
+    f"""
+    <div class='tape-news'>
+      <div class='tape-news-track'>
+        <div class='tape-news-group'><span class='item'>{news_text}</span></div>
+        <div class='tape-news-group' aria-hidden='true'><span class='item'>{news_text}</span></div>
+      </div>
     </div>
-  </div>
-  """, unsafe_allow_html=True
+    """, unsafe_allow_html=True
 )
 
 # ==================== PIE ====================
