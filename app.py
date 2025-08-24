@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (ticker real con yfinance, sin inventos; suplentes si faltan)
+# app.py — LaSultana Meat Index (CME real para Res y Cerdo; resto intacto)
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -30,7 +30,7 @@ footer {visibility:hidden;}
 /* -------- LOGO -------- */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* -------- CINTA SUPERIOR (marquee continuo) -------- */
+/* -------- CINTA SUPERIOR -------- */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-family:ui-monospace,Menlo,Consolas,monospace}
@@ -53,7 +53,7 @@ footer {visibility:hidden;}
 .table th{text-align:left;color:var(--muted);font-weight:600}
 .table td:last-child{text-align:right}
 
-/* -------- NOTICIA (marquee continuo) -------- */
+/* -------- NOTICIA -------- */
 .tape-news{
   border:1px solid var(--line);
   border-radius:10px;
@@ -84,82 +84,50 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (datos reales, sin inventos) ====================
-# Lista principal (tu lista)
+# ==================== CINTA SUPERIOR (bursátil real) ====================
 PRIMARY_COMPANIES = [
-    ("Tyson Foods","TSN"),
-    ("Pilgrim’s Pride","PPC"),
-    ("BRF","BRFS"),
-    ("Cal-Maine Foods","CALM"),
-    ("Vital Farms","VITL"),
-    ("JBS","JBS"),
-    ("Marfrig Global","MRRTY"),
-    ("Minerva","MRVSY"),
-    ("Grupo Bafar","BAFARB.MX"),
-    ("WH Group (Smithfield)","WHGLY"),  # reemplaza SFD (delistado)
-    ("Seaboard","SEB"),
-    ("Hormel Foods","HRL"),
-    ("Grupo KUO","KUOB.MX"),
-    ("Maple Leaf Foods","MFI.TO"),
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
+    ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
+    ("JBS","JBS"), ("Marfrig Global","MRRTY"), ("Minerva","MRVSY"),
+    ("Grupo Bafar","BAFARB.MX"), ("WH Group (Smithfield)","WHGLY"),
+    ("Seaboard","SEB"), ("Hormel Foods","HRL"),
+    ("Grupo KUO","KUOB.MX"), ("Maple Leaf Foods","MFI.TO"),
 ]
-
-# Suplentes si alguno no tiene data / no cotiza en Yahoo
-ALTERNATES = [
-    ("Conagra Brands","CAG"),
-    ("Sysco","SYY"),
-    ("US Foods","USFD"),
-    ("Cranswick","CWK.L"),
-    ("NH Foods","2282.T"),
-]
+ALTERNATES = [("Conagra Brands","CAG"), ("Sysco","SYY"), ("US Foods","USFD"), ("Cranswick","CWK.L"), ("NH Foods","2282.T")]
 
 @st.cache_data(ttl=75)
 def fetch_quotes_strict():
-    """Devuelve SOLO compañías con datos reales (sin inventos).
-       Si faltan, intenta suplentes del sector. Orden final = primero válidos de PRIMARY, luego alternates válidos."""
     valid = []
     seen = set()
     def try_add(name, sym):
-        if sym in seen: 
-            return
+        if sym in seen: return
         try:
             t = yf.Ticker(sym)
-            # intradía 1m; si falla, probamos 5m
             hist = t.history(period="1d", interval="1m")
             if hist is None or hist.empty:
                 hist = t.history(period="1d", interval="5m")
-            if hist is None or hist.empty:
-                return  # no datos → NO mostrar
+            if hist is None or hist.empty: return
             closes = hist["Close"].dropna()
-            if closes.empty:
-                return
-            last  = float(closes.iloc[-1])
-            first = float(closes.iloc[0])
-            ch    = last - first
+            if closes.empty: return
+            last, first = float(closes.iloc[-1]), float(closes.iloc[0])
+            ch = last - first
             valid.append({"name":name,"sym":sym,"px":last,"ch":ch})
             seen.add(sym)
         except Exception:
-            return  # silencioso: si no hay data, no se muestra
-    # principales
-    for n,s in PRIMARY_COMPANIES:
-        try_add(n,s)
-    # si faltan, suplentes
-    i = 0
-    while len(valid) < 14 and i < len(ALTERNATES):
-        n,s = ALTERNATES[i]
-        try_add(n,s)
-        i += 1
+            return
+    for n,s in PRIMARY_COMPANIES: try_add(n,s)
+    i=0
+    while len(valid)<14 and i<len(ALTERNATES):
+        try_add(*ALTERNATES[i]); i+=1
     return valid
 
 quotes = fetch_quotes_strict()
-
-# Construcción del HTML: solo lo que tenga data
 line = ""
 for q in quotes:
     cls = "green" if q["ch"]>=0 else "red"
     arrow = "▲" if q["ch"]>=0 else "▼"
     line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
 
-# Render de ÚNICA banda (doble pista → loop perfecto). Si no hay datos, se verá vacío (como pediste).
 st.markdown(
     f"""
     <div class='tape'>
@@ -171,7 +139,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ==================== MÉTRICAS PRINCIPALES (dejamos igual por ahora) ====================
+# ==================== FX (igual) ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -179,16 +147,36 @@ def get_fx():
                          params={"base":"USD","symbols":"MXN"}, timeout=8).json()
         return float(j["rates"]["MXN"])
     except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)  # FX sí mantenemos fallback mínimo
-
+        return 18.50 + random.uniform(-0.2, 0.2)  # lo dejamos igual por ahora
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# placeholders de CME/USDA (no tocamos aún, como acordamos)
-live_cattle = 185.3 + random.uniform(-0.6,0.6)
-lean_hogs   = 94.9  + random.uniform(-0.6,0.6)
-lc_delta = random.choice([+0.25, -0.25])
-lh_delta = random.choice([+0.40, -0.40])
+# ==================== CME: Live Cattle (LE=F) y Lean Hogs (HE=F) — REAL ====================
+@st.cache_data(ttl=75)
+def get_cme_last_and_delta(sym: str):
+    """
+    Devuelve (last, delta) usando datos intradía 1m/5m de Yahoo.
+    Delta = last - primer close del día (aprox "cambio intradía").
+    Sin inventos: si no hay datos, retorna (None, None).
+    """
+    try:
+        t = yf.Ticker(sym)
+        hist = t.history(period="1d", interval="1m")
+        if hist is None or hist.empty:
+            hist = t.history(period="1d", interval="5m")
+        if hist is None or hist.empty:
+            return (None, None)
+        closes = hist["Close"].dropna()
+        if closes.empty: return (None, None)
+        last = float(closes.iloc[-1])
+        first = float(closes.iloc[0])
+        delta = last - first
+        return (last, delta)
+    except Exception:
+        return (None, None)
+
+live_cattle_px, live_cattle_delta = get_cme_last_and_delta("LE=F")
+lean_hogs_px,   lean_hogs_delta   = get_cme_last_and_delta("HE=F")
 
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
@@ -206,31 +194,37 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Res / Cerdo (centro apilado)
-st.markdown(f"""
-<div class="centerstack">
-  <div class="card box">
-    <div class="kpi">
-      <div class="left">
-        <div class="title">Res en pie</div>
-        <div class="big">{fmt2(live_cattle)} <span class="muted">USD/100 lb</span></div>
+# Res / Cerdo (centro apilado) — YA REAL
+def kpi_box(titulo: str, price, delta):
+    if price is None:
+        price_html = "<div class='big'>N/D <span class='muted'>USD/100 lb</span></div>"
+        delta_html = ""
+    else:
+        dir_cls = "green" if (delta or 0)>=0 else "red"
+        dir_arrow = "▲" if (delta or 0)>=0 else "▼"
+        price_html = f"<div class='big'>{fmt2(price)} <span class='muted'>USD/100 lb</span></div>"
+        delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(delta))}</div>"
+    return f"""
+    <div class="card box">
+      <div class="kpi">
+        <div class="left">
+          <div class="title">{titulo}</div>
+          {price_html}
+        </div>
+        {delta_html}
       </div>
-      <div class="delta {'red' if lc_delta<0 else 'green'}">{'▼' if lc_delta<0 else '▲'} {fmt2(abs(lc_delta))}</div>
     </div>
-  </div>
-  <div class="card box">
-    <div class="kpi">
-      <div class="left">
-        <div class="title">Cerdo en pie</div>
-        <div class="big">{fmt2(lean_hogs)} <span class="muted">USD/100 lb</span></div>
-      </div>
-      <div class="delta {'red' if lh_delta<0 else 'green'}">{'▼' if lh_delta<0 else '▲'} {fmt2(abs(lh_delta))}</div>
-    </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    """
 
-# Piezas de pollo (derecha) — sin cambios
+st.markdown(
+    "<div class='centerstack'>"
+    + kpi_box("Res en pie",   live_cattle_px, live_cattle_delta)
+    + kpi_box("Cerdo en pie", lean_hogs_px,   lean_hogs_delta)
+    + "</div>",
+    unsafe_allow_html=True
+)
+
+# Piezas de pollo (derecha) — SIN TOCAR
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -245,7 +239,7 @@ st.markdown(f"""
 
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== NOTICIA (cinta inferior) — sin cambios de lógica ====================
+# ==================== NOTICIA (cinta inferior) — SIN TOCAR ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
   "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
