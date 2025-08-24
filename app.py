@@ -1,6 +1,9 @@
 # app.py — LaSultana Meat Index
-# Unifica tipografía, reduce 30% la unidad “USD/100 lb”, quita “(CME)”
-# Res/Cerdo: siempre mostramos lo que Yahoo muestre (last + change con su delay).
+# Ajustes de tipografía y tamaños:
+# - Cinta bursátil +12%
+# - Noticias/IA +18% (21px)
+# - "USD/lb" del pollo con misma .unit que "USD/100 lb"
+# - Precios de piezas de pollo = 48px (igual que res/cerdo) + flechita ▲/▼
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -35,10 +38,10 @@ footer {visibility:hidden;}
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* CINTA SUPERIOR */
+/* CINTA SUPERIOR ( +12% ) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
-.tape-group{display:inline-block;white-space:nowrap;padding:10px 0}
+.tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%} /* +12% */
 .item{display:inline-block;margin:0 32px}
 @keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
@@ -54,16 +57,18 @@ footer {visibility:hidden;}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
 .unit{font-size:70%; color:var(--muted); font-weight:600; letter-spacing:.3px}
 
-/* TABLA POLLO */
+/* TABLA POLLO — mismos tamaños que KPIs */
 .table{width:100%;border-collapse:collapse}
-.table th,.table td{padding:10px;border-bottom:1px solid var(--line)}
+.table th,.table td{padding:10px;border-bottom:1px solid var(--line); vertical-align:middle}
 .table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .table td:last-child{text-align:right}
+.price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
+.price-delta{font-size:20px;margin-left:10px}
 
-/* NOTICIA */
+/* NOTICIA (+18% ⇒ 21px) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
-.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0}
+.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px} /* 18px → 21px */
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
 </style>
@@ -153,16 +158,8 @@ fx_delta = random.choice([+0.02, -0.02])
 # ==================== CME: “lo que Yahoo muestre” (last + change) ====================
 @st.cache_data(ttl=75)
 def get_yahoo_last(sym: str):
-    """
-    Tomamos last y change según lo expone Yahoo para el ticker.
-    Preferencias:
-      1) fast_info.last_price / previous_close
-      2) info['regularMarketPrice'] / info['regularMarketPreviousClose']
-      3) history diario para last/prev (fallback)
-    """
     try:
         t = yf.Ticker(sym)
-
         # 1) fast_info
         try:
             fi = t.fast_info
@@ -172,7 +169,6 @@ def get_yahoo_last(sym: str):
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-
         # 2) info estándar
         try:
             inf = t.info or {}
@@ -182,14 +178,11 @@ def get_yahoo_last(sym: str):
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-
         # 3) history diario (fallback)
         d = t.history(period="10d", interval="1d")
-        if d is None or d.empty:
-            return None, None
+        if d is None or d.empty: return None, None
         closes = d["Close"].dropna()
-        if closes.shape[0] == 0:
-            return None, None
+        if closes.shape[0] == 0: return None, None
         last = float(closes.iloc[-1])
         prev = float(closes.iloc[-2]) if closes.shape[0] >= 2 else last
         return last, last - prev
@@ -215,7 +208,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 2) Res / Cerdo (unidad 30% más chica y sin “(CME)”)
+# 2) Res / Cerdo
 def kpi_card(titulo: str, price, chg):
     unit = "USD/100 lb"
     if price is None:
@@ -243,27 +236,46 @@ st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_all
 st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo (placeholder)
+# 3) Piezas de Pollo (placeholder con flechita por fila)
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
-rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
+# Temporal: simulamos variación para dibujar la flecha (al conectar USDA usaremos deltas reales)
+parts_delta = {k: random.choice([-0.04, -0.02, 0.00, +0.02, +0.04]) for k in parts.keys()}
+
+rows_html = ""
+for k,v in parts.items():
+    d = parts_delta[k]
+    cls = "green" if d>=0 else "red"
+    arrow = "▲" if d>=0 else "▼"
+    rows_html += (
+        f"<tr>"
+        f"<td>{k}</td>"
+        f"<td>"
+        f"<span class='price-lg'>{fmt2(v)}</span> "
+        f"<span class='unit'>USD/lb</span> "
+        f"<span class='price-delta {cls}'>{arrow}</span>"
+        f"</td>"
+        f"</tr>"
+    )
+
 st.markdown(f"""
 <div class="card">
   <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo</div>
   <table class="table">
-    <thead><tr><th>Producto</th><th>USD/lb</th></tr></thead>
+    <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
 </div>
 """, unsafe_allow_html=True)
 
+# Cerramos la grilla
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== NOTICIA (placeholder rotativo) ====================
 noticias = [
-  "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
-  "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
-  "Poultry: oferta amplia presiona piezas oscuras, pero la pechuga jumbo se mantiene estable en contratos mayoristas.",
-  "FX: fortaleza del peso abarata importaciones; revisar spreads USD/lb→MXN/kg y el impacto en costos logísticos."
+  "USDA: beef cutout estable; cortes medios firmes; dem. retail moderada, foodservice suave.",
+  "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
+  "Poultry: oferta amplia presiona piezas oscuras; pechuga jumbo estable en contratos.",
+  "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
 ]
 k = int(time.time()//30) % len(noticias)
 news_text = noticias[k]
