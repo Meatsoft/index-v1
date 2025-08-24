@@ -1,12 +1,4 @@
-# app.py — LaSultana Meat Index (hands-free)
-# - Bursátil (yfinance)
-# - USD/MXN (exchangerate.host)
-# - Res/Cerdo (LE=F / HE=F via Yahoo)
-# - Piezas de pollo (USDA AJ_PY018) con:
-#     * auto-fetch cada 60s (múltiples URLs)
-#     * parser robusto (Weighted Avg → rango → último número)
-#     * snapshot local automático (poultry_last.json)
-#     * NUNCA inventa datos: si no hay fetch, muestra último snapshot; si jamás hubo, muestra "—"
+# app.py — LaSultana Meat Index (hands-free, USDA robusto, tipografía fija)
 
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -15,14 +7,15 @@ st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
 # ====================== ESTILOS ======================
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b;
-  --font-sans: "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Manrope","Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font-sans)!important}
-*{font-family:var(--font-sans)!important}
+*{font-family:var(--font-sans)!important; font-weight:500 !important} /* desactiva “bolds” raros */
 .block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
 .grid .card:last-child{margin-bottom:0}
@@ -47,18 +40,18 @@ footer {visibility:hidden;}
 
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .left{display:flex;flex-direction:column;gap:6px}
-.kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
+.kpi .title{font-size:18px;color:var(--muted); font-weight:500 !important}
+.kpi .big{font-size:48px;font-weight:700 !important;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-.unit-inline{font-size:0.7em; color:var(--muted); font-weight:600; letter-spacing:.3px}
+.unit-inline{font-size:0.7em; color:var(--muted); font-weight:600 !important; letter-spacing:.3px}
 
 /* TABLA POLLO */
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:10px;border-bottom:1px solid var(--line); vertical-align:middle}
-.table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
+.table th{text-align:left;color:var(--muted);font-weight:600 !important;letter-spacing:.2px}
 .table td:last-child{text-align:right}
-.price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
+.price-lg{font-size:48px;font-weight:700 !important;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
 
 /* NOTICIAS */
@@ -86,6 +79,7 @@ if os.path.exists("ILSMeatIndex.png"):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== CINTA SUPERIOR (bursátil) ====================
+import yfinance as yf
 PRIMARY_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -227,15 +221,16 @@ def _extract_avg_from_line(line_upper: str) -> float | None:
         except: return None
     return None
 
+HEADERS = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"}
+
 @st.cache_data(ttl=1800)
 def fetch_usda_poultry_parts_try_all() -> dict:
     for url in POULTRY_URLS:
         try:
-            r = requests.get(url, timeout=12)
+            r = requests.get(url, timeout=12, headers=HEADERS)
             if r.status_code != 200: continue
             txt = r.text
-            if "<html" in txt.lower():  # redirección/proxy
-                continue
+            # si devuelve HTML de alguna redirección, aún puede contener el texto; no descartamos por <html>
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
             for disp, patterns in POULTRY_MAP.items():
@@ -267,17 +262,10 @@ def save_snapshot(data: dict, path="poultry_last.json"):
         pass
 
 def get_poultry_with_snapshot():
-    """
-    Devuelve (result, stale, seeded):
-      - result: {display: {"price":float, "delta":float}}
-      - stale: True si se usó snapshot (no hubo fetch)
-      - seeded: True si fue la primera vez que guardamos snapshot ahora
-    """
     current = fetch_usda_poultry_parts_try_all()  # intenta hoy
     prev = load_snapshot()
     seeded = False
     if current:
-        # calcular delta vs prev y guardar
         result = {}
         for k,v in current.items():
             pv = prev.get(k, None)
@@ -287,12 +275,10 @@ def get_poultry_with_snapshot():
         save_snapshot(current)
         if not prev: seeded = True
         return result, False, seeded
-    # no hubo fetch -> usar snapshot si existe
     if prev:
         res = {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
                for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
         return res, True, False
-    # primera vida sin snapshot ni fetch: devolver placeholders
     placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
     return placeholders, True, False
 
@@ -338,11 +324,11 @@ def kpi_card(titulo: str, price, chg):
     """
 
 st.markdown("<div class='centerstack'>", unsafe_allow_html=True)
-st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_allow_html=True)
-st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
+st.markdown(kpi_card("Res en pie",   *get_yahoo_last("LE=F")), unsafe_allow_html=True)  # recache ok
+st.markdown(kpi_card("Cerdo en pie", *get_yahoo_last("HE=F")), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo — tabla (hands-free)
+# 3) Piezas de Pollo — tabla
 DISPLAY_ORDER = [
     "Breast - B/S", "Breast T/S", "Tenderloins",
     "Wings, Whole", "Wings, Drummettes", "Wings, Mid-Joint", "Party Wings",
@@ -352,8 +338,7 @@ DISPLAY_ORDER = [
     "Whole Broiler/Fryer",
 ]
 
-rows_html = ""
-has_any_value = False
+rows_html, has_any_value = "", False
 for name in DISPLAY_ORDER:
     item = poultry.get(name)
     if not item: continue
@@ -371,7 +356,7 @@ for name in DISPLAY_ORDER:
         f"</tr>"
     )
 
-title_suffix = "National (USDA)"
+title_suffix = "Piezas de Pollo, Precios U.S. National (USDA)"
 if poultry_stale and has_any_value:
     title_suffix += " <span class='badge'>último disponible</span>"
 elif poultry_seeded_now:
@@ -383,7 +368,7 @@ if not rows_html:
 st.markdown(f"""
 <div class="card">
   <div class="title" style="color:var(--txt);margin-bottom:6px">
-    Piezas de Pollo — {title_suffix}
+    {title_suffix}
   </div>
   <table class="table">
     <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
