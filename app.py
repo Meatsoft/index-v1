@@ -1,7 +1,5 @@
 # app.py — LaSultana Meat Index
-# - Unidad "USD/lb" del pollo idéntica a "USD/100 lb" (mismo .unit, forzado en tabla)
-# - Deltas de pollo con flecha + valor (▲ 0,02 / ▼ 0,02)
-# - Resto igual (cinta 12%+, noticias 18%+, Yahoo last+change, auto-refresh)
+# Unidad junto al número grande: .unit-inline (0.7em) en res/cerdo y pollo.
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -53,7 +51,8 @@ footer {visibility:hidden;}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-.unit{font-size:70%; color:var(--muted); font-weight:600; letter-spacing:.3px}
+/* clave: unidad siempre relativa al número grande */
+.unit-inline{font-size:0.7em; color:var(--muted); font-weight:600; letter-spacing:.3px}
 
 /* TABLA POLLO — mismos tamaños que KPIs */
 .table{width:100%;border-collapse:collapse}
@@ -62,7 +61,6 @@ footer {visibility:hidden;}
 .table td:last-child{text-align:right}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
-.table .unit{font-size:70% !important; color:var(--muted)!important; font-weight:600!important; letter-spacing:.3px!important}
 
 /* NOTICIA (+18% ⇒ 21px) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
@@ -88,6 +86,7 @@ if os.path.exists("ILSMeatIndex.png"):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== CINTA SUPERIOR (bursátil real) ====================
+import yfinance as yf
 PRIMARY_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -142,7 +141,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ==================== FX (con fallback suave) ====================
+# ==================== FX ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -154,12 +153,11 @@ def get_fx():
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# ==================== CME: “lo que Yahoo muestre” (last + change) ====================
+# ==================== CME: “lo que Yahoo muestre” ====================
 @st.cache_data(ttl=75)
 def get_yahoo_last(sym: str):
     try:
         t = yf.Ticker(sym)
-        # 1) fast_info
         try:
             fi = t.fast_info
             last = fi.get("last_price", None)
@@ -168,7 +166,6 @@ def get_yahoo_last(sym: str):
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-        # 2) info estándar
         try:
             inf = t.info or {}
             last = inf.get("regularMarketPrice", None)
@@ -177,7 +174,6 @@ def get_yahoo_last(sym: str):
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-        # 3) history diario (fallback)
         d = t.history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
         closes = d["Close"].dropna()
@@ -188,8 +184,8 @@ def get_yahoo_last(sym: str):
     except Exception:
         return None, None
 
-live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")  # Live Cattle
-lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")  # Lean Hogs
+live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
+lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
 
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
@@ -207,16 +203,16 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 2) Res / Cerdo
+# 2) Res / Cerdo — unidad dentro del número grande
 def kpi_card(titulo: str, price, chg):
     unit = "USD/100 lb"
     if price is None:
-        price_html = f"<div class='big'>N/D <span class='unit'>{unit}</span></div>"
+        price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"
         delta_html = ""
     else:
         dir_cls   = "green" if (chg or 0) >= 0 else "red"
         dir_arrow = "▲"     if (chg or 0) >= 0 else "▼"
-        price_html = f"<div class='big'>{fmt2(price)} <span class='unit'>{unit}</span></div>"
+        price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
         delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(chg))}</div>"
     return f"""
     <div class="card box">
@@ -235,9 +231,8 @@ st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_all
 st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo (placeholder con flecha + valor)
+# 3) Piezas de Pollo — unidad DENTRO del número grande + flecha y valor
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
-# Temporal: simulamos delta (al conectar USDA usaremos deltas reales)
 parts_delta = {k: random.choice([-0.04, -0.02, 0.00, +0.02, +0.04]) for k in parts.keys()}
 
 rows_html = ""
@@ -249,8 +244,7 @@ for k,v in parts.items():
         f"<tr>"
         f"<td>{k}</td>"
         f"<td>"
-        f"<span class='price-lg'>{fmt2(v)}</span> "
-        f"<span class='unit'>USD/lb</span> "
+        f"<span class='price-lg'>{fmt2(v)} <span class='unit-inline'>USD/lb</span></span> "
         f"<span class='price-delta {cls}'>{arrow} {fmt2(abs(d))}</span>"
         f"</td>"
         f"</tr>"
@@ -266,7 +260,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ==================== NOTICIA (placeholder rotativo) ====================
+# ==================== NOTICIA (rotativo) ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes; dem. retail moderada, foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
