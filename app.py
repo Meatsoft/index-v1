@@ -1,6 +1,6 @@
 # app.py — LaSultana Meat Index
-# Fix: tarjetas de Res/Cerdo se renderizan por separado (sin HTML escapado).
-# Datos reales: bursátil (yfinance), LE=F/HE=F (CME vía Yahoo). Lo demás igual.
+# CME (LE=F/HE=F): siempre mostramos "lo que Yahoo muestra" (last y change con su delay).
+# Barra bursátil y USD/MXN se mantienen igual.
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -134,7 +134,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ==================== FX (igual) ====================
+# ==================== FX (igual, con fallback suave) ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -142,36 +142,64 @@ def get_fx():
                          params={"base":"USD","symbols":"MXN"}, timeout=8).json()
         return float(j["rates"]["MXN"])
     except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)  # lo dejaremos así de momento
+        return 18.50 + random.uniform(-0.2, 0.2)
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# ==================== CME: Live Cattle / Lean Hogs — REAL ====================
+# ==================== CME: "lo que Yahoo muestre" (last y change) ====================
 @st.cache_data(ttl=75)
-def get_cme_last_and_delta(sym: str):
+def get_yahoo_last(sym: str):
+    """
+    Toma el 'last' y el 'change' que Yahoo expone para el ticker.
+    Orden de preferencia:
+      1) fast_info.last_price / fast_info.previous_close
+      2) info['regularMarketPrice'] / info['regularMarketPreviousClose']
+      3) history diario para last/prev como fallback
+    Devuelve: (last, change) o (None, None) si no hay datos.
+    """
     try:
         t = yf.Ticker(sym)
-        hist = t.history(period="1d", interval="1m")
-        if hist is None or hist.empty:
-            hist = t.history(period="1d", interval="5m")
-        if hist is None or hist.empty:
-            return (None, None)
-        closes = hist["Close"].dropna()
-        if closes.empty: return (None, None)
-        last  = float(closes.iloc[-1])
-        first = float(closes.iloc[0])
-        delta = last - first
-        return (last, delta)
-    except Exception:
-        return (None, None)
 
-live_cattle_px, live_cattle_delta = get_cme_last_and_delta("LE=F")
-lean_hogs_px,   lean_hogs_delta   = get_cme_last_and_delta("HE=F")
+        # 1) fast_info (rápido)
+        try:
+            fi = t.fast_info
+            last = fi.get("last_price", None)
+            prev = fi.get("previous_close", None)
+            if last is not None and prev is not None:
+                return float(last), float(last) - float(prev)
+        except Exception:
+            pass
+
+        # 2) info estándar
+        try:
+            inf = t.info or {}
+            last = inf.get("regularMarketPrice", None)
+            prev = inf.get("regularMarketPreviousClose", None)
+            if last is not None and prev is not None:
+                return float(last), float(last) - float(prev)
+        except Exception:
+            pass
+
+        # 3) history (diario)
+        d = t.history(period="10d", interval="1d")
+        if d is None or d.empty:
+            return None, None
+        closes = d["Close"].dropna()
+        if closes.shape[0] == 0:
+            return None, None
+        last = float(closes.iloc[-1])
+        prev = float(closes.iloc[-2]) if closes.shape[0] >= 2 else last
+        return last, last - prev
+    except Exception:
+        return None, None
+
+live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")  # Live Cattle (CME)
+lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")  # Lean Hogs (CME)
 
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# 1) USD/MXN (columna izquierda)
+# 1) USD/MXN
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -184,16 +212,17 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 2) Res / Cerdo (columna central) — cada tarjeta por separado
-def kpi_card(titulo: str, price, delta):
+# 2) Res / Cerdo (CME, siempre last+change de Yahoo)
+def kpi_card(titulo: str, price, chg):
+    sub = "USD/100 lb (CME)"
     if price is None:
-        price_html = "<div class='big'>N/D <span class='muted'>USD/100 lb</span></div>"
+        price_html = f"<div class='big'>N/D <span class='muted'>{sub}</span></div>"
         delta_html = ""
     else:
-        dir_cls = "green" if (delta or 0)>=0 else "red"
-        dir_arrow = "▲" if (delta or 0)>=0 else "▼"
-        price_html = f"<div class='big'>{fmt2(price)} <span class='muted'>USD/100 lb</span></div>"
-        delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(delta))}</div>"
+        dir_cls   = "green" if (chg or 0) >= 0 else "red"
+        dir_arrow = "▲"     if (chg or 0) >= 0 else "▼"
+        price_html = f"<div class='big'>{fmt2(price)} <span class='muted'>{sub}</span></div>"
+        delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(chg))}</div>"
     return f"""
     <div class="card box">
       <div class="kpi">
@@ -206,15 +235,12 @@ def kpi_card(titulo: str, price, delta):
     </div>
     """
 
-# Abrimos el contenedor central
 st.markdown("<div class='centerstack'>", unsafe_allow_html=True)
-# Renderizamos **cada** tarjeta con su propio call (evita que Streamlit escape HTML)
-st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_delta), unsafe_allow_html=True)
-st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_delta),   unsafe_allow_html=True)
-# Cerramos el contenedor central
+st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_allow_html=True)
+st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de pollo (columna derecha) — sin cambios
+# 3) Piezas de Pollo (placeholder por ahora)
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -227,10 +253,9 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Cerramos la grilla
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== NOTICIA (cinta inferior) — sin cambios ====================
+# ==================== NOTICIA (placeholder rotativo) ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
   "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
