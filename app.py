@@ -1,9 +1,7 @@
 # app.py — LaSultana Meat Index
-# Ajustes de tipografía y tamaños:
-# - Cinta bursátil +12%
-# - Noticias/IA +18% (21px)
-# - "USD/lb" del pollo con misma .unit que "USD/100 lb"
-# - Precios de piezas de pollo = 48px (igual que res/cerdo) + flechita ▲/▼
+# - Unidad "USD/lb" del pollo idéntica a "USD/100 lb" (mismo .unit, forzado en tabla)
+# - Deltas de pollo con flecha + valor (▲ 0,02 / ▼ 0,02)
+# - Resto igual (cinta 12%+, noticias 18%+, Yahoo last+change, auto-refresh)
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -38,10 +36,10 @@ footer {visibility:hidden;}
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* CINTA SUPERIOR ( +12% ) */
+/* CINTA SUPERIOR (+12%) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
-.tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%} /* +12% */
+.tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 @keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
@@ -64,11 +62,12 @@ footer {visibility:hidden;}
 .table td:last-child{text-align:right}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
+.table .unit{font-size:70% !important; color:var(--muted)!important; font-weight:600!important; letter-spacing:.3px!important}
 
 /* NOTICIA (+18% ⇒ 21px) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
-.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px} /* 18px → 21px */
+.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
 </style>
@@ -236,9 +235,9 @@ st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_all
 st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo (placeholder con flechita por fila)
+# 3) Piezas de Pollo (placeholder con flecha + valor)
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
-# Temporal: simulamos variación para dibujar la flecha (al conectar USDA usaremos deltas reales)
+# Temporal: simulamos delta (al conectar USDA usaremos deltas reales)
 parts_delta = {k: random.choice([-0.04, -0.02, 0.00, +0.02, +0.04]) for k in parts.keys()}
 
 rows_html = ""
@@ -252,7 +251,7 @@ for k,v in parts.items():
         f"<td>"
         f"<span class='price-lg'>{fmt2(v)}</span> "
         f"<span class='unit'>USD/lb</span> "
-        f"<span class='price-delta {cls}'>{arrow}</span>"
+        f"<span class='price-delta {cls}'>{arrow} {fmt2(abs(d))}</span>"
         f"</td>"
         f"</tr>"
     )
@@ -266,9 +265,6 @@ st.markdown(f"""
   </table>
 </div>
 """, unsafe_allow_html=True)
-
-# Cerramos la grilla
-st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== NOTICIA (placeholder rotativo) ====================
 noticias = [
