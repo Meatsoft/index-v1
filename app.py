@@ -1,13 +1,12 @@
-# app.py — LaSultana Meat Index (completo)
+# app.py — LaSultana Meat Index (hands-free)
 # - Bursátil (yfinance)
 # - USD/MXN (exchangerate.host)
 # - Res/Cerdo (LE=F / HE=F via Yahoo)
-# - Piezas de pollo: USDA AMS (AJ_PY018 National) con:
-#     * intento múltiples URLs
-#     * parser robusto (Wtd Avg → rango → último número)
-#     * snapshot local (poultry_last.json)
-#     * botón para “Sembrar último disponible (USDA)”
-# - Auto-refresh 60s
+# - Piezas de pollo (USDA AJ_PY018) con:
+#     * auto-fetch cada 60s (múltiples URLs)
+#     * parser robusto (Weighted Avg → rango → último número)
+#     * snapshot local automático (poultry_last.json)
+#     * NUNCA inventa datos: si no hay fetch, muestra último snapshot; si jamás hubo, muestra "—"
 
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -187,7 +186,7 @@ def get_yahoo_last(sym: str):
 live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
 lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
 
-# ==================== USDA POULTRY PARTS (fallback + sembrar) ====================
+# ==================== USDA POULTRY PARTS (auto + snapshot) ====================
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -253,59 +252,51 @@ def fetch_usda_poultry_parts_try_all() -> dict:
             continue
     return {}
 
-def compute_poultry_delta_with_cache(current: dict, cache_path: str = "poultry_last.json"):
-    stale = False
-    prev = {}
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "r") as f: prev = json.load(f)
-        except Exception: prev = {}
-    if not current:
-        result = {}
-        for k,v in prev.items():
-            if isinstance(v, dict): v = v.get("price")
-            if v is None: continue
-            result[k] = {"price": float(v), "delta": 0.0}
-        stale = True
-        return result, stale
-    result = {}
-    for k,v in current.items():
-        pv = prev.get(k)
-        if isinstance(pv, dict): pv = pv.get("price")
-        dlt = 0.0 if pv is None else (float(v) - float(pv))
-        result[k] = {"price": float(v), "delta": float(dlt)}
+def load_snapshot(path="poultry_last.json") -> dict:
+    if not os.path.exists(path): return {}
     try:
-        with open(cache_path, "w") as f:
-            json.dump({k: v["price"] for k,v in result.items()}, f)
+        with open(path, "r") as f: return json.load(f)
+    except Exception:
+        return {}
+
+def save_snapshot(data: dict, path="poultry_last.json"):
+    try:
+        with open(path, "w") as f:
+            json.dump({k: float(v) for k,v in data.items()}, f)
     except Exception:
         pass
-    return result, False
 
-def seed_snapshot_from_usda(cache_path: str = "poultry_last.json") -> bool:
-    data = fetch_usda_poultry_parts_try_all()
-    if not data: 
-        return False
-    try:
-        with open(cache_path, "w") as f:
-            json.dump({k: float(v) for k,v in data.items()}, f)
-        return True
-    except Exception:
-        return False
+def get_poultry_with_snapshot():
+    """
+    Devuelve (result, stale, seeded):
+      - result: {display: {"price":float, "delta":float}}
+      - stale: True si se usó snapshot (no hubo fetch)
+      - seeded: True si fue la primera vez que guardamos snapshot ahora
+    """
+    current = fetch_usda_poultry_parts_try_all()  # intenta hoy
+    prev = load_snapshot()
+    seeded = False
+    if current:
+        # calcular delta vs prev y guardar
+        result = {}
+        for k,v in current.items():
+            pv = prev.get(k, None)
+            if isinstance(pv, dict): pv = pv.get("price")
+            dlt = 0.0 if pv is None else (float(v) - float(pv))
+            result[k] = {"price": float(v), "delta": float(dlt)}
+        save_snapshot(current)
+        if not prev: seeded = True
+        return result, False, seeded
+    # no hubo fetch -> usar snapshot si existe
+    if prev:
+        res = {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
+               for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
+        return res, True, False
+    # primera vida sin snapshot ni fetch: devolver placeholders
+    placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
+    return placeholders, True, False
 
-# Botón de siembra (útil la primera vez si USDA aún no publica)
-cols_seed = st.columns([1,1,6,1,1])
-with cols_seed[1]:
-    if st.button("Sembrar último disponible (USDA)", use_container_width=True):
-        ok = seed_snapshot_from_usda()
-        if ok:
-            st.success("Snapshot sembrado ✅. Recarga automática en 2s…")
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.error("No se pudo leer el reporte USDA en este momento.")
-
-poultry_now = fetch_usda_poultry_parts_try_all()
-poultry, poultry_stale = compute_poultry_delta_with_cache(poultry_now)
+poultry, poultry_stale, poultry_seeded_now = get_poultry_with_snapshot()
 
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
@@ -351,7 +342,7 @@ st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_all
 st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo — tabla
+# 3) Piezas de Pollo — tabla (hands-free)
 DISPLAY_ORDER = [
     "Breast - B/S", "Breast T/S", "Tenderloins",
     "Wings, Whole", "Wings, Drummettes", "Wings, Mid-Joint", "Party Wings",
@@ -362,26 +353,32 @@ DISPLAY_ORDER = [
 ]
 
 rows_html = ""
+has_any_value = False
 for name in DISPLAY_ORDER:
     item = poultry.get(name)
     if not item: continue
     price = item["price"]; delta = item["delta"]
-    cls = "green" if delta >= 0 else "red"
-    arrow = "▲" if delta >= 0 else "▼"
+    if price is not None: has_any_value = True
+    cls = "green" if (delta or 0) >= 0 else "red"
+    arrow = "▲" if (delta or 0) >= 0 else "▼"
+    price_txt = f"{fmt2(price)}" if price is not None else "—"
+    delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
     rows_html += (
         f"<tr>"
         f"<td>{name}</td>"
-        f"<td><span class='price-lg'>{fmt2(price)} <span class='unit-inline'>USD/lb</span></span> "
-        f"<span class='price-delta {cls}'>{arrow} {fmt2(abs(delta))}</span></td>"
+        f"<td><span class='price-lg'>{price_txt} <span class='unit-inline'>USD/lb</span></span> "
+        f"<span class='price-delta {cls}'>{delta_txt}</span></td>"
         f"</tr>"
     )
 
 title_suffix = "National (USDA)"
-if poultry_stale:
+if poultry_stale and has_any_value:
     title_suffix += " <span class='badge'>último disponible</span>"
+elif poultry_seeded_now:
+    title_suffix += " <span class='badge'>actualizado</span>"
+
 if not rows_html:
-    rows_html = ("<tr><td colspan='2' class='muted'>Aún no hay reporte USDA ni snapshot previo. "
-                 "Usa el botón de 'Sembrar'.</td></tr>")
+    rows_html = ("<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>")
 
 st.markdown(f"""
 <div class="card">
