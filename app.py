@@ -16,10 +16,12 @@ st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 # ====================== ESTILOS ======================
 st.markdown("""
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b;
-  --font-sans: "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  /* Cambiamos a Manrope como fuente corporativa principal */
+  --font-sans: "Manrope", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font-sans)!important}
 *{font-family:var(--font-sans)!important}
@@ -194,34 +196,34 @@ POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
 POULTRY_MAP = {
-    "Breast - B/S":        [r"BREAST\s*-\s*B/?S", r"BREAST,\s*B/?S", r"BREAST\s+B/?S"],
-    "Breast T/S":          [r"BREAST\s*T/?S", r"STRAPLESS"],
+    "Breast - B/S":        [r"BREAST\\s*-\\s*B/?S", r"BREAST,\\s*B/?S", r"BREAST\\s+B/?S"],
+    "Breast T/S":          [r"BREAST\\s*T/?S", r"STRAPLESS"],
     "Tenderloins":         [r"TENDERLOINS?"],
-    "Wings, Whole":        [r"WINGS?,\s*WHOLE"],
+    "Wings, Whole":        [r"WINGS?,\\s*WHOLE"],
     "Wings, Drummettes":   [r"DRUMMETTES?"],
-    "Wings, Mid-Joint":    [r"MID[\-\s]?JOINT", r"FLATS?"],
-    "Party Wings":         [r"PARTY\s*WINGS?"],
-    "Leg Quarters":        [r"LEG\s*QUARTERS?"],
-    "Leg Meat - B/S":      [r"LEG\s*MEAT\s*-\s*B/?S"],
+    "Wings, Mid-Joint":    [r"MID[\\-\\s]?JOINT", r"FLATS?"],
+    "Party Wings":         [r"PARTY\\s*WINGS?"],
+    "Leg Quarters":        [r"LEG\\s*QUARTERS?"],
+    "Leg Meat - B/S":      [r"LEG\\s*MEAT\\s*-\\s*B/?S"],
     "Thighs - B/S":        [r"THIGHS?.*B/?S"],
     "Thighs":              [r"THIGHS?(?!.*B/?S)"],
     "Drumsticks":          [r"DRUMSTICKS?"],
-    "Whole Legs":          [r"WHOLE\s*LEGS?"],
-    "Whole Broiler/Fryer": [r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
+    "Whole Legs":          [r"WHOLE\\s*LEGS?"],
+    "Whole Broiler/Fryer": [r"WHOLE\\s*BROILER/?FRYER", r"WHOLE\\s*BROILER\\s*-\\s*FRYER"],
 }
 
 def _extract_avg_from_line(line_upper: str) -> float | None:
-    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", line_upper)
+    m = re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)", line_upper)
     if m:
         try: return float(m.group(1))
         except: pass
-    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", line_upper)
+    m2 = re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)", line_upper)
     if m2:
         try:
             low = float(m2.group(1)); high = float(m2.group(2))
             return (low + high)/2.0
         except: pass
-    nums = re.findall(r"(\d+(?:\.\d+)?)", line_upper)
+    nums = re.findall(r"(\\d+(?:\\.\\d+)?)", line_upper)
     if nums:
         try: return float(nums[-1])
         except: return None
@@ -277,7 +279,6 @@ def get_poultry_with_snapshot():
     prev = load_snapshot()
     seeded = False
     if current:
-        # calcular delta vs prev y guardar
         result = {}
         for k,v in current.items():
             pv = prev.get(k, None)
@@ -287,12 +288,10 @@ def get_poultry_with_snapshot():
         save_snapshot(current)
         if not prev: seeded = True
         return result, False, seeded
-    # no hubo fetch -> usar snapshot si existe
     if prev:
         res = {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
                for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
         return res, True, False
-    # primera vida sin snapshot ni fetch: devolver placeholders
     placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
     return placeholders, True, False
 
@@ -371,11 +370,13 @@ for name in DISPLAY_ORDER:
         f"</tr>"
     )
 
-title_suffix = "National (USDA)"
+# >>>> Título EXACTO solicitado
+base_title = "Piezas de Pollo, Precios U.S. National (USDA)"
+badge = ""
 if poultry_stale and has_any_value:
-    title_suffix += " <span class='badge'>último disponible</span>"
+    badge = " <span class='badge'>último disponible</span>"
 elif poultry_seeded_now:
-    title_suffix += " <span class='badge'>actualizado</span>"
+    badge = " <span class='badge'>actualizado</span>"
 
 if not rows_html:
     rows_html = ("<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>")
@@ -383,7 +384,7 @@ if not rows_html:
 st.markdown(f"""
 <div class="card">
   <div class="title" style="color:var(--txt);margin-bottom:6px">
-    Piezas de Pollo — {title_suffix}
+    {base_title}{badge}
   </div>
   <table class="table">
     <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
