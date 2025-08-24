@@ -1,6 +1,6 @@
 # app.py — LaSultana Meat Index
-# Res/Cerdo conectados a CME (LE=F / HE=F) con manejo limpio de N/D.
-# Sin cambios en el resto del tablero.
+# Fix: tarjetas de Res/Cerdo se renderizan por separado (sin HTML escapado).
+# Datos reales: bursátil (yfinance), LE=F/HE=F (CME vía Yahoo). Lo demás igual.
 
 import os, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -21,11 +21,11 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important}
   border:1px solid var(--line);
   border-radius:10px;
   padding:14px;
-  margin-bottom:18px; /* separación uniforme */
+  margin-bottom:18px;
 }
 .grid .card:last-child{margin-bottom:0}
 
-/* Ocultar UI de Streamlit */
+/* Ocultar UI */
 header[data-testid="stHeader"] {display:none;}
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
@@ -57,15 +57,7 @@ footer {visibility:hidden;}
 .table td:last-child{text-align:right}
 
 /* NOTICIA */
-.tape-news{
-  border:1px solid var(--line);
-  border-radius:10px;
-  background:#0d141a;
-  overflow:hidden;
-  min-height:52px;
-  margin-top:0;
-  margin-bottom:18px;
-}
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:18px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
@@ -87,7 +79,7 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (bursátil real, sin inventos) ====================
+# ==================== CINTA SUPERIOR (bursátil real) ====================
 PRIMARY_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -142,7 +134,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
-# ==================== FX (igual que antes) ====================
+# ==================== FX (igual) ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -150,16 +142,13 @@ def get_fx():
                          params={"base":"USD","symbols":"MXN"}, timeout=8).json()
         return float(j["rates"]["MXN"])
     except Exception:
-        return 18.50 + random.uniform(-0.2, 0.2)  # por ahora dejamos fallback
+        return 18.50 + random.uniform(-0.2, 0.2)  # lo dejaremos así de momento
 fx = get_fx()
 fx_delta = random.choice([+0.02, -0.02])
 
-# ==================== CME: Live Cattle y Lean Hogs — REAL ====================
+# ==================== CME: Live Cattle / Lean Hogs — REAL ====================
 @st.cache_data(ttl=75)
 def get_cme_last_and_delta(sym: str):
-    """
-    Devuelve (last, delta intradía). Si no hay datos, (None, None).
-    """
     try:
         t = yf.Ticker(sym)
         hist = t.history(period="1d", interval="1m")
@@ -169,7 +158,7 @@ def get_cme_last_and_delta(sym: str):
             return (None, None)
         closes = hist["Close"].dropna()
         if closes.empty: return (None, None)
-        last = float(closes.iloc[-1])
+        last  = float(closes.iloc[-1])
         first = float(closes.iloc[0])
         delta = last - first
         return (last, delta)
@@ -182,7 +171,7 @@ lean_hogs_px,   lean_hogs_delta   = get_cme_last_and_delta("HE=F")
 # ==================== GRID ====================
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 
-# USD/MXN (izquierda)
+# 1) USD/MXN (columna izquierda)
 st.markdown(f"""
 <div class="card">
   <div class="kpi">
@@ -195,14 +184,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# Res/Cerdo (centro apilado) — con N/D limpio y sin HTML roto
-def kpi_html(titulo: str, price, delta):
+# 2) Res / Cerdo (columna central) — cada tarjeta por separado
+def kpi_card(titulo: str, price, delta):
     if price is None:
         price_html = "<div class='big'>N/D <span class='muted'>USD/100 lb</span></div>"
         delta_html = ""
     else:
-        dir_cls = "green" if (delta or 0) >= 0 else "red"
-        dir_arrow = "▲" if (delta or 0) >= 0 else "▼"
+        dir_cls = "green" if (delta or 0)>=0 else "red"
+        dir_arrow = "▲" if (delta or 0)>=0 else "▼"
         price_html = f"<div class='big'>{fmt2(price)} <span class='muted'>USD/100 lb</span></div>"
         delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(delta))}</div>"
     return f"""
@@ -217,15 +206,15 @@ def kpi_html(titulo: str, price, delta):
     </div>
     """
 
-center_html = (
-    "<div class='centerstack'>"
-    + kpi_html("Res en pie",   live_cattle_px, live_cattle_delta)
-    + kpi_html("Cerdo en pie", lean_hogs_px,   lean_hogs_delta)
-    + "</div>"
-)
-st.markdown(center_html, unsafe_allow_html=True)
+# Abrimos el contenedor central
+st.markdown("<div class='centerstack'>", unsafe_allow_html=True)
+# Renderizamos **cada** tarjeta con su propio call (evita que Streamlit escape HTML)
+st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_delta), unsafe_allow_html=True)
+st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_delta),   unsafe_allow_html=True)
+# Cerramos el contenedor central
+st.markdown("</div>", unsafe_allow_html=True)
 
-# Piezas de pollo (derecha) — sin tocar
+# 3) Piezas de pollo (columna derecha) — sin cambios
 parts = {"Pechuga":2.65,"Ala":1.98,"Pierna":1.32,"Muslo":1.29}
 rows_html = "".join([f"<tr><td>{k}</td><td>{fmt2(v)}</td></tr>" for k,v in parts.items()])
 st.markdown(f"""
@@ -238,9 +227,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+# Cerramos la grilla
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== NOTICIA (cinta inferior) — sin tocar ====================
+# ==================== NOTICIA (cinta inferior) — sin cambios ====================
 noticias = [
   "USDA: beef cutout estable; cortes medios firmes, con demanda moderada en retail y ligera debilidad en foodservice.",
   "USMEF: exportaciones de cerdo a México firmes; importadores absorben costos mientras supermercados sostienen hams.",
@@ -249,7 +239,6 @@ noticias = [
 ]
 k = int(time.time()//30) % len(noticias)
 news_text = noticias[k]
-
 st.markdown(
     f"""
     <div class='tape-news'>
