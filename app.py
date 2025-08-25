@@ -1,5 +1,8 @@
-# app.py — LaSultana Meat Index (hands-free) — cinta news 15% más rápida,
-# pollo: unit 15% más chica, nombres +10% y en español (estilo ComeCarne).
+# app.py — LaSultana Meat Index (hands-free, sin parpadeo)
+# - Bursátil (yfinance)
+# - USD/MXN (exchangerate.host)
+# - Res/Cerdo (LE=F / HE=F via Yahoo)
+# - Piezas de pollo (USDA AJ_PY018) con snapshot local (sin inventar datos)
 
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -13,7 +16,7 @@ st.markdown("""
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b;
-  --font-sans: "Manrope", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans:"Manrope","Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font-sans)!important}
 *{font-family:var(--font-sans)!important}
@@ -21,9 +24,9 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
 .grid .card:last-child{margin-bottom:0}
 
-header[data-testid="stHeader"] {display:none;}
-#MainMenu {visibility:hidden;}
-footer {visibility:hidden;}
+header[data-testid="stHeader"]{display:none;}
+#MainMenu{visibility:hidden;}
+footer{visibility:hidden;}
 
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
@@ -45,22 +48,22 @@ footer {visibility:hidden;}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
-.unit-inline{font-size:0.7em; color:var(--muted); font-weight:600; letter-spacing:.3px}
+.unit-inline{font-size:0.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* TABLA POLLO */
 .poultry-table{width:100%}
 .poultry-table table{width:100%;border-collapse:collapse}
-.poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line); vertical-align:middle}
+.poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .poultry-table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 /* +10% en nombre del producto */
 .poultry-table td:first-child{font-size:110%;}
 /* “USD/lb” 15% más chico SOLO en pollo */
-.unit-inline--poultry{font-size:0.60em; color:var(--muted); font-weight:600; letter-spacing:.3px}
+.unit-inline--poultry{font-size:0.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
 .poultry-table td:last-child{text-align:right}
 
-/* NOTICIAS (15% más rápida → 177s * 0.85 ≈ 150s) */
+/* NOTICIAS (15% más rápida ≈ 150s) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 150s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
@@ -148,8 +151,6 @@ def get_fx():
         return float(j["rates"]["MXN"])
     except Exception:
         return 18.50 + random.uniform(-0.2, 0.2)
-fx = get_fx()
-fx_delta = random.choice([+0.02, -0.02])
 
 # ==================== CME (Yahoo) ====================
 @st.cache_data(ttl=75)
@@ -182,9 +183,6 @@ def get_yahoo_last(sym: str):
     except Exception:
         return None, None
 
-live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
-lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
-
 # ==================== USDA POULTRY PARTS ====================
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
@@ -208,23 +206,21 @@ POULTRY_MAP = {
     "Whole Legs":          [r"WHOLE\s*LEGS?"],
     "Whole Broiler/Fryer": [r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
 }
-
-# Etiquetas en español (estilo ComeCarne)
 LABELS_ES = {
-    "Breast - B/S":        "Pechuga sin hueso (B/S)",
-    "Breast T/S":          "Pechuga T/S (strapless)",
-    "Tenderloins":         "Tender de pechuga",
-    "Wings, Whole":        "Ala entera",
-    "Wings, Drummettes":   "Muslito de ala (drummette)",
-    "Wings, Mid-Joint":    "Media ala (flat)",
-    "Party Wings":         "Alitas mixtas (party wings)",
-    "Leg Quarters":        "Pierna-muslo (cuarto trasero)",
-    "Leg Meat - B/S":      "Carne de pierna B/S",
-    "Thighs - B/S":        "Muslo B/S",
-    "Thighs":              "Muslo con hueso",
-    "Drumsticks":          "Pierna (drumstick)",
-    "Whole Legs":          "Pierna entera",
-    "Whole Broiler/Fryer": "Pollo entero (broiler/fryer)",
+    "Breast - B/S":"Pechuga sin hueso (B/S)",
+    "Breast T/S":"Pechuga T/S (strapless)",
+    "Tenderloins":"Tender de pechuga",
+    "Wings, Whole":"Ala entera",
+    "Wings, Drummettes":"Muslito de ala (drummette)",
+    "Wings, Mid-Joint":"Media ala (flat)",
+    "Party Wings":"Alitas mixtas (party wings)",
+    "Leg Quarters":"Pierna-muslo (cuarto trasero)",
+    "Leg Meat - B/S":"Carne de pierna B/S",
+    "Thighs - B/S":"Muslo B/S",
+    "Thighs":"Muslo con hueso",
+    "Drumsticks":"Pierna (drumstick)",
+    "Whole Legs":"Pierna entera",
+    "Whole Broiler/Fryer":"Pollo entero (broiler/fryer)",
 }
 
 def _extract_avg_from_line(line_upper: str) -> float | None:
@@ -251,7 +247,7 @@ def fetch_usda_poultry_parts_try_all() -> dict:
             r = requests.get(url, timeout=12)
             if r.status_code != 200: continue
             txt = r.text
-            if "<html" in txt.lower():
+            if "<html" in txt.lower():  # redirección/proxy
                 continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
@@ -304,130 +300,135 @@ def get_poultry_with_snapshot():
     placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
     return placeholders, True, False
 
-poultry, poultry_stale, poultry_seeded_now = get_poultry_with_snapshot()
+# ==================== UI ESTÁTICA (logo + cinta + estructura) ====================
+# (ya renderizado arriba)
 
-# ==================== GRID ====================
-st.markdown("<div class='grid'>", unsafe_allow_html=True)
+# ===== Placeholders para evitar parpadeo =====
+grid_top = st.container()
+with grid_top:
+    st.markdown("<div class='grid'>", unsafe_allow_html=True)
+    fx_ph     = st.empty()
+    res_ph    = st.empty()
+    cerdo_ph  = st.empty()
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# 1) USD/MXN
-st.markdown(f"""
-<div class="card">
-  <div class="kpi">
-    <div class="left">
-      <div class="title">USD/MXN</div>
-      <div class="big green">{fmt4(fx)}</div>
-      <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
+pollo_ph  = st.container()
+news_ph   = st.empty()
+footer_ph = st.empty()
+
+# ===== Render helpers =====
+def render_fx(ph, fx, fx_delta):
+    ph.markdown(f"""
+    <div class="card">
+      <div class="kpi">
+        <div class="left">
+          <div class="title">USD/MXN</div>
+          <div class="big {'green' if fx_delta>=0 else 'red'}">{fmt4(fx)}</div>
+          <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
+        </div>
+      </div>
     </div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# 2) Res / Cerdo
-def kpi_card(titulo: str, price, chg):
+def render_kpi(ph, titulo, price, chg):
     unit = "USD/100 lb"
     if price is None:
         price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"
         delta_html = ""
     else:
-        dir_cls   = "green" if (chg or 0) >= 0 else "red"
-        dir_arrow = "▲"     if (chg or 0) >= 0 else "▼"
+        cls = "green" if (chg or 0) >= 0 else "red"
+        arrow = "▲" if (chg or 0) >= 0 else "▼"
         price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
-        delta_html = f"<div class='delta {dir_cls}'>{dir_arrow} {fmt2(abs(chg))}</div>"
-    return f"""
+        delta_html = f"<div class='delta {cls}'>{arrow} {fmt2(abs(chg))}</div>"
+    ph.markdown(f"""
     <div class="card box">
       <div class="kpi">
-        <div class="left">
-          <div class="title">{titulo}</div>
-          {price_html}
-        </div>
+        <div class="left"><div class="title">{titulo}</div>{price_html}</div>
         {delta_html}
       </div>
     </div>
-    """
+    """, unsafe_allow_html=True)
 
-st.markdown("<div class='centerstack'>", unsafe_allow_html=True)
-st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_allow_html=True)
-st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+def render_poultry(ph_container, poultry, poultry_stale, poultry_seeded_now):
+    DISPLAY_ORDER = [
+        "Breast - B/S","Breast T/S","Tenderloins","Wings, Whole","Wings, Drummettes",
+        "Wings, Mid-Joint","Party Wings","Leg Quarters","Leg Meat - B/S",
+        "Thighs - B/S","Thighs","Drumsticks","Whole Legs","Whole Broiler/Fryer",
+    ]
+    rows = []
+    has_val = False
+    for k in DISPLAY_ORDER:
+        it = poultry.get(k)
+        if not it: continue
+        price, delta = it["price"], it["delta"]
+        if price is not None: has_val = True
+        cls = "green" if (delta or 0) >= 0 else "red"
+        arrow = "▲" if (delta or 0) >= 0 else "▼"
+        price_txt = f"{fmt2(price)}" if price is not None else "—"
+        delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
+        rows.append(
+          f"<tr><td>{LABELS_ES.get(k,k)}</td>"
+          f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--poultry'>USD/lb</span></span> "
+          f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
+        )
+    if not rows:
+        rows = ["<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>"]
+    badge = ""
+    if poultry_stale and has_val: badge = " <span class='badge'>último disponible</span>"
+    elif poultry_seeded_now:      badge = " <span class='badge'>actualizado</span>"
+    ph_container.markdown(f"""
+    <div class="card poultry-table">
+      <div class="title" style="color:var(--txt);margin-bottom:6px">
+        Piezas de Pollo, Precios U.S. National (USDA){badge}
+      </div>
+      <table>
+        <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
+        <tbody>{''.join(rows)}</tbody>
+      </table>
+    </div>
+    """, unsafe_allow_html=True)
 
-# 3) Piezas de Pollo — tabla (con español y tamaños)
-DISPLAY_ORDER = [
-    "Breast - B/S", "Breast T/S", "Tenderloins",
-    "Wings, Whole", "Wings, Drummettes", "Wings, Mid-Joint", "Party Wings",
-    "Leg Quarters", "Leg Meat - B/S",
-    "Thighs - B/S", "Thighs",
-    "Drumsticks", "Whole Legs",
-    "Whole Broiler/Fryer",
-]
-
-rows_html = ""
-has_any_value = False
-for name in DISPLAY_ORDER:
-    item = poultry.get(name)
-    if not item: continue
-    price = item["price"]; delta = item["delta"]
-    if price is not None: has_any_value = True
-    cls = "green" if (delta or 0) >= 0 else "red"
-    arrow = "▲" if (delta or 0) >= 0 else "▼"
-    display_name = LABELS_ES.get(name, name)  # ← nombres en español
-    price_txt = f"{fmt2(price)}" if price is not None else "—"
-    delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
-    rows_html += (
-        f"<tr>"
-        f"<td>{display_name}</td>"
-        f"<td><span class='price-lg'>{price_txt} "
-        f"<span class='unit-inline--poultry'>USD/lb</span></span> "
-        f"<span class='price-delta {cls}'>{delta_txt}</span></td>"
-        f"</tr>"
-    )
-
-base_title = "Piezas de Pollo, Precios U.S. National (USDA)"
-badge = ""
-if poultry_stale and has_any_value:
-    badge = " <span class='badge'>último disponible</span>"
-elif poultry_seeded_now:
-    badge = " <span class='badge'>actualizado</span>"
-
-if not rows_html:
-    rows_html = ("<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>")
-
-st.markdown(f"""
-<div class="card poultry-table">
-  <div class="title" style="color:var(--txt);margin-bottom:6px">
-    {base_title}{badge}
-  </div>
-  <table>
-    <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-</div>
-""", unsafe_allow_html=True)
-
-# ==================== NOTICIAS ====================
-noticias = [
-  "USDA: beef cutout estable; cortes medios firmes; dem. retail moderada, foodservice suave.",
-  "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
-  "Poultry: oferta amplia presiona piezas oscuras; pechuga B/S estable en contratos.",
-  "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
-]
-k = int(time.time()//30) % len(noticias)
-news_text = noticias[k]
-st.markdown(
-    f"""
+def render_news(ph):
+    noticias = [
+      "USDA: beef cutout estable; cortes medios firmes; dem. retail moderada, foodservice suave.",
+      "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
+      "Poultry: oferta amplia presiona piezas oscuras; pechuga B/S estable en contratos.",
+      "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
+    ]
+    k = int(time.time()//30) % len(noticias)
+    text = noticias[k]
+    ph.markdown(f"""
     <div class='tape-news'>
       <div class='tape-news-track'>
-        <div class='tape-news-group'><span class='item'>{news_text}</span></div>
-        <div class='tape-news-group' aria-hidden='true'><span class='item'>{news_text}</span></div>
+        <div class='tape-news-group'><span class='item'>{text}</span></div>
+        <div class='tape-news-group' aria-hidden='true'><span class='item'>{text}</span></div>
       </div>
     </div>
-    """, unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
 
-# ==================== PIE ====================
-st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
-  unsafe_allow_html=True,
-)
+# ==================== LOOP SIN PARPADEO ====================
+while True:
+    try:
+        fx        = get_fx()
+        fx_delta  = random.choice([+0.02, -0.02])
 
-time.sleep(60)
-st.rerun()
+        live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
+        lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
+
+        poultry, poultry_stale, poultry_seeded_now = get_poultry_with_snapshot()
+
+        render_fx(fx_ph, fx, fx_delta)
+        render_kpi(res_ph,   "Res en pie",   live_cattle_px, live_cattle_ch)
+        render_kpi(cerdo_ph, "Cerdo en pie", lean_hogs_px,   lean_hogs_ch)
+        render_poultry(pollo_ph, poultry, poultry_stale, poultry_seeded_now)
+        render_news(news_ph)
+
+        footer_ph.markdown(
+            f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        # Si algo truena, no rompemos el bucle — próximo ciclo reintenta.
+        pass
+
+    time.sleep(60)
