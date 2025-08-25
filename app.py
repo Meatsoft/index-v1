@@ -1,10 +1,10 @@
-# app.py — LaSultana Meat Index (hands-free, sin parpadeo, pollo siempre último)
+# app.py — LaSultana Meat Index (hands-free, fix persistencia pollo)
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# ====================== ESTILOS ======================
+# ========= ESTILOS =========
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -21,7 +21,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* CINTA SUPERIOR (stocks) */
+/* CINTA SUPERIOR */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
@@ -61,19 +61,19 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== HELPERS ====================
+# ========= HELPERS =========
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 def fmt4(x: float) -> str:
     s = f"{x:,.4f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ==================== LOGO ====================
+# ========= LOGO =========
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (bursátil) ====================
+# ========= CINTA SUPERIOR =========
 PRIMARY_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("BRF","BRFS"),
     ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
@@ -123,7 +123,7 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ==================== FX / CME ====================
+# ========= FX / CME =========
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -161,7 +161,7 @@ def get_yahoo_last(sym: str):
     except Exception:
         return None, None
 
-# ==================== USDA POULTRY (siempre último, sin “—”) ====================
+# ========= USDA POULTRY (último siempre) =========
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -253,15 +253,9 @@ def save_snap(d: dict):
         pass
 
 def poultry_latest_or_none():
-    """
-    Devuelve:
-      - dict {name: {"price":float,"delta":float}} si hay datos (fetch o snapshot)
-      - None si NO hay fetch y NO hay snapshot (primer arranque sin datos).
-    """
     cur = fetch_usda_try_all()
     prev = load_snap()
     if cur:
-        # calcular delta vs prev y guardar
         res = {}
         for k,v in cur.items():
             pv = prev.get(k); 
@@ -271,13 +265,11 @@ def poultry_latest_or_none():
         save_snap(cur)
         return res
     if prev:
-        # usar snapshot, delta=0
         return {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
                 for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
-    # ni fetch ni snapshot → None (no renderizamos, así NO salen guiones)
-    return None
+    return None  # ni fetch ni snapshot
 
-# ==================== PLACEHOLDERS (sin parpadeo) ====================
+# ========= PLACEHOLDERS =========
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 fx_ph, res_ph, cerdo_ph = st.empty(), st.empty(), st.empty()
 st.markdown("</div>", unsafe_allow_html=True)
@@ -285,7 +277,10 @@ pollo_ph  = st.container()
 news_ph   = st.empty()
 footer_ph = st.empty()
 
-# ==================== RENDER HELPERS ====================
+if "last_poultry_html" not in st.session_state:
+    st.session_state["last_poultry_html"] = None
+
+# ========= RENDER HELPERS =========
 def render_fx(ph, fx, fx_delta):
     ph.markdown(f"""
     <div class="card"><div class="kpi"><div class="left">
@@ -309,7 +304,7 @@ def render_kpi(ph, titulo, price, chg):
     </div></div>
     """, unsafe_allow_html=True)
 
-def render_poultry(ph_container, data: dict, stale_badge: bool, seeded_badge: bool):
+def build_poultry_html(data: dict) -> str:
     order = [
         "Breast - B/S","Breast T/S","Tenderloins","Wings, Whole","Wings, Drummettes",
         "Wings, Mid-Joint","Party Wings","Leg Quarters","Leg Meat - B/S",
@@ -327,20 +322,18 @@ def render_poultry(ph_container, data: dict, stale_badge: bool, seeded_badge: bo
           f"<td><span class='price-lg'>{fmt2(price)} <span class='unit-inline--poultry'>USD/lb</span></span> "
           f"<span class='price-delta {cls}'>{arr} {fmt2(abs(delta))}</span></td></tr>"
         )
-    badge = ""
-    if stale_badge:  badge = " <span class='badge'>último disponible</span>"
-    if seeded_badge: badge = " <span class='badge'>actualizado</span>"
-    ph_container.markdown(f"""
+    body = "".join(rows) if rows else ""
+    return f"""
     <div class="card poultry-table">
       <div class="title" style="color:var(--txt);margin-bottom:6px">
-        Piezas de Pollo, Precios U.S. National (USDA){badge}
+        Piezas de Pollo, Precios U.S. National (USDA)
       </div>
       <table>
         <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
-        <tbody>{''.join(rows)}</tbody>
+        <tbody>{body}</tbody>
       </table>
     </div>
-    """, unsafe_allow_html=True)
+    """
 
 def render_news(ph):
     noticias = [
@@ -358,50 +351,38 @@ def render_news(ph):
     </div></div>
     """, unsafe_allow_html=True)
 
-# ==================== LOOP SIN PARPADEO ====================
-# Guarda el último HTML de pollo para no borrarlo si un ciclo falló sin snapshot
-if "last_poultry_html" not in st.session_state:
-    st.session_state["last_poultry_html"] = None
-
+# ========= LOOP =========
 while True:
     try:
-        # FX y Futuros
+        # FX / Futuros
         fx = get_fx(); fx_delta = random.choice([+0.02, -0.02])
         lc_px, lc_ch = get_yahoo_last("LE=F")
         lh_px, lh_ch = get_yahoo_last("HE=F")
 
-        # Pollo: fetch/snapshot — nunca “—”
-        data = poultry_latest_or_none()
-        # flags para badge (si hubo fetch fallido pero snapshot sí, marcamos "último disponible")
-        stale_badge = False; seeded_badge = False
-        if data is not None:
-            # ¿veníamos con HTML previo? Si no había snapshot y ahora sí hay datos, “actualizado”
-            if st.session_state["last_poultry_html"] is None:
-                seeded_badge = True
-            # renderizamos y guardamos el HTML resultante
-            # (para saber si en el próximo ciclo debemos conservarlo o no)
-            with st.capture_output() as cap:
-                render_poultry(pollo_ph, data, stale_badge, seeded_badge)
-            st.session_state["last_poultry_html"] = cap.getvalue()
-        else:
-            # No hay fetch NI snapshot: no tocamos la UI (se mantiene último)
-            if st.session_state["last_poultry_html"]:
-                pollo_ph.markdown(st.session_state["last_poultry_html"], unsafe_allow_html=True)
-
-        # Render FX y KPIs
         render_fx(fx_ph, fx, fx_delta)
         render_kpi(res_ph,   "Res en pie",   lc_px, lc_ch)
         render_kpi(cerdo_ph, "Cerdo en pie", lh_px, lh_ch)
 
-        # Noticias
-        render_news(news_ph)
+        # Pollo: fetch o snapshot; si nada, usar último HTML guardado
+        pdata = poultry_latest_or_none()
+        if pdata is not None:
+            html = build_poultry_html(pdata)
+            st.session_state["last_poultry_html"] = html
+            pollo_ph.markdown(html, unsafe_allow_html=True)
+        else:
+            # ni fetch ni snapshot → conserva lo último
+            if st.session_state["last_poultry_html"]:
+                pollo_ph.markdown(st.session_state["last_poultry_html"], unsafe_allow_html=True)
 
-        # Footer
+        # Noticias y footer
+        render_news(news_ph)
         footer_ph.markdown(
             f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
             unsafe_allow_html=True,
         )
     except Exception:
-        pass
+        # Si algo truena, mantenemos la última UI
+        if st.session_state.get("last_poultry_html"):
+            pollo_ph.markdown(st.session_state["last_poultry_html"], unsafe_allow_html=True)
 
     time.sleep(60)
