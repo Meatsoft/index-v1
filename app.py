@@ -1,9 +1,4 @@
-# app.py — LaSultana Meat Index (hands-free, sin parpadeo)
-# - Bursátil (yfinance)
-# - USD/MXN (exchangerate.host)
-# - Res/Cerdo (LE=F / HE=F via Yahoo)
-# - Piezas de pollo (USDA AJ_PY018) con snapshot local (sin inventar datos)
-
+# app.py — LaSultana Meat Index (hands-free, sin parpadeo, pollo siempre último)
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -23,12 +18,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 .block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
 .grid .card:last-child{margin-bottom:0}
-
-header[data-testid="stHeader"]{display:none;}
-#MainMenu{visibility:hidden;}
-footer{visibility:hidden;}
-
-/* LOGO */
+header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
 /* CINTA SUPERIOR (stocks) */
@@ -55,9 +45,7 @@ footer{visibility:hidden;}
 .poultry-table table{width:100%;border-collapse:collapse}
 .poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .poultry-table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
-/* +10% en nombre del producto */
 .poultry-table td:first-child{font-size:110%;}
-/* “USD/lb” 15% más chico SOLO en pollo */
 .unit-inline--poultry{font-size:0.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
@@ -75,11 +63,9 @@ footer{visibility:hidden;}
 
 # ==================== HELPERS ====================
 def fmt2(x: float) -> str:
-    s = f"{x:,.2f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.2f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 def fmt4(x: float) -> str:
-    s = f"{x:,.4f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.4f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 # ==================== LOGO ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -125,24 +111,19 @@ def fetch_quotes_strict():
     return valid
 
 quotes = fetch_quotes_strict()
-ticker_line = ""
-for q in quotes:
-    cls = "green" if q["ch"]>=0 else "red"
-    arrow = "▲" if q["ch"]>=0 else "▼"
-    ticker_line += f"<span class='item'>{q['name']} ({q['sym']}) <b class='{cls}'>{q['px']:.2f} {arrow} {abs(q['ch']):.2f}</b></span>"
-
-st.markdown(
-    f"""
-    <div class='tape'>
-      <div class='tape-track'>
-        <div class='tape-group'>{ticker_line}</div>
-        <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True
+ticker_line = "".join(
+    f"<span class='item'>{q['name']} ({q['sym']}) "
+    f"<b class='{'green' if q['ch']>=0 else 'red'}'>{q['px']:.2f} "
+    f"{'▲' if q['ch']>=0 else '▼'} {abs(q['ch']):.2f}</b></span>"
+    for q in quotes
 )
+st.markdown(f"""
+<div class='tape'><div class='tape-track'>
+  <div class='tape-group'>{ticker_line}</div>
+  <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
+</div></div>""", unsafe_allow_html=True)
 
-# ==================== FX ====================
+# ==================== FX / CME ====================
 @st.cache_data(ttl=75)
 def get_fx():
     try:
@@ -152,23 +133,20 @@ def get_fx():
     except Exception:
         return 18.50 + random.uniform(-0.2, 0.2)
 
-# ==================== CME (Yahoo) ====================
 @st.cache_data(ttl=75)
 def get_yahoo_last(sym: str):
     try:
         t = yf.Ticker(sym)
         try:
             fi = t.fast_info
-            last = fi.get("last_price", None)
-            prev = fi.get("previous_close", None)
+            last = fi.get("last_price"); prev = fi.get("previous_close")
             if last is not None and prev is not None:
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
         try:
             inf = t.info or {}
-            last = inf.get("regularMarketPrice", None)
-            prev = inf.get("regularMarketPreviousClose", None)
+            last = inf.get("regularMarketPrice"); prev = inf.get("regularMarketPreviousClose")
             if last is not None and prev is not None:
                 return float(last), float(last) - float(prev)
         except Exception:
@@ -183,7 +161,7 @@ def get_yahoo_last(sym: str):
     except Exception:
         return None, None
 
-# ==================== USDA POULTRY PARTS ====================
+# ==================== USDA POULTRY (siempre último, sin “—”) ====================
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -191,20 +169,20 @@ POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
 POULTRY_MAP = {
-    "Breast - B/S":        [r"BREAST\s*-\s*B/?S", r"BREAST,\s*B/?S", r"BREAST\s+B/?S"],
-    "Breast T/S":          [r"BREAST\s*T/?S", r"STRAPLESS"],
-    "Tenderloins":         [r"TENDERLOINS?"],
-    "Wings, Whole":        [r"WINGS?,\s*WHOLE"],
-    "Wings, Drummettes":   [r"DRUMMETTES?"],
-    "Wings, Mid-Joint":    [r"MID[\-\s]?JOINT", r"FLATS?"],
-    "Party Wings":         [r"PARTY\s*WINGS?"],
-    "Leg Quarters":        [r"LEG\s*QUARTERS?"],
-    "Leg Meat - B/S":      [r"LEG\s*MEAT\s*-\s*B/?S"],
-    "Thighs - B/S":        [r"THIGHS?.*B/?S"],
-    "Thighs":              [r"THIGHS?(?!.*B/?S)"],
-    "Drumsticks":          [r"DRUMSTICKS?"],
-    "Whole Legs":          [r"WHOLE\s*LEGS?"],
-    "Whole Broiler/Fryer": [r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
+    "Breast - B/S":[r"BREAST\s*-\s*B/?S", r"BREAST,\s*B/?S", r"BREAST\s+B/?S"],
+    "Breast T/S":[r"BREAST\s*T/?S", r"STRAPLESS"],
+    "Tenderloins":[r"TENDERLOINS?"],
+    "Wings, Whole":[r"WINGS?,\s*WHOLE"],
+    "Wings, Drummettes":[r"DRUMMETTES?"],
+    "Wings, Mid-Joint":[r"MID[\-\s]?JOINT", r"FLATS?"],
+    "Party Wings":[r"PARTY\s*WINGS?"],
+    "Leg Quarters":[r"LEG\s*QUARTERS?"],
+    "Leg Meat - B/S":[r"LEG\s*MEAT\s*-\s*B/?S"],
+    "Thighs - B/S":[r"THIGHS?.*B/?S"],
+    "Thighs":[r"THIGHS?(?!.*B/?S)"],
+    "Drumsticks":[r"DRUMSTICKS?"],
+    "Whole Legs":[r"WHOLE\s*LEGS?"],
+    "Whole Broiler/Fryer":[r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
 }
 LABELS_ES = {
     "Breast - B/S":"Pechuga sin hueso (B/S)",
@@ -222,160 +200,136 @@ LABELS_ES = {
     "Whole Legs":"Pierna entera",
     "Whole Broiler/Fryer":"Pollo entero (broiler/fryer)",
 }
+HEADERS = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123 Safari/537.36"}
+SNAP = "poultry_last.json"
 
-def _extract_avg_from_line(line_upper: str) -> float | None:
-    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", line_upper)
+def _avg(line: str):
+    U = line.upper()
+    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
     if m:
         try: return float(m.group(1))
         except: pass
-    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", line_upper)
+    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", U)
     if m2:
-        try:
-            low = float(m2.group(1)); high = float(m2.group(2))
-            return (low + high)/2.0
+        try: return (float(m2.group(1))+float(m2.group(2)))/2.0
         except: pass
-    nums = re.findall(r"(\d+(?:\.\d+)?)", line_upper)
+    nums = re.findall(r"(\d+(?:\.\d+)?)", U)
     if nums:
         try: return float(nums[-1])
-        except: return None
+        except: pass
     return None
 
 @st.cache_data(ttl=1800)
-def fetch_usda_poultry_parts_try_all() -> dict:
+def fetch_usda_try_all() -> dict:
     for url in POULTRY_URLS:
         try:
-            r = requests.get(url, timeout=12)
+            r = requests.get(url, timeout=12, headers=HEADERS)
             if r.status_code != 200: continue
             txt = r.text
-            if "<html" in txt.lower():  # redirección/proxy
-                continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
-            for disp, patterns in POULTRY_MAP.items():
+            for disp, pats in POULTRY_MAP.items():
                 for ln in lines:
-                    U = ln.upper()
-                    if any(re.search(pat, U) for pat in patterns):
-                        val = _extract_avg_from_line(U)
-                        if val is not None:
-                            out[disp] = val
-                            break
-            if out:
-                return out
+                    if any(re.search(p, ln.upper()) for p in pats):
+                        v = _avg(ln)
+                        if v is not None:
+                            out[disp] = v; break
+            if out: return out
         except Exception:
             continue
     return {}
 
-def load_snapshot(path="poultry_last.json") -> dict:
-    if not os.path.exists(path): return {}
+def load_snap():
+    if not os.path.exists(SNAP): return {}
     try:
-        with open(path, "r") as f: return json.load(f)
+        with open(SNAP,"r") as f: return json.load(f)
     except Exception:
         return {}
 
-def save_snapshot(data: dict, path="poultry_last.json"):
+def save_snap(d: dict):
     try:
-        with open(path, "w") as f:
-            json.dump({k: float(v) for k,v in data.items()}, f)
+        with open(SNAP,"w") as f: json.dump({k:float(v) for k,v in d.items()}, f)
     except Exception:
         pass
 
-def get_poultry_with_snapshot():
-    current = fetch_usda_poultry_parts_try_all()
-    prev = load_snapshot()
-    seeded = False
-    if current:
-        result = {}
-        for k,v in current.items():
-            pv = prev.get(k, None)
+def poultry_latest_or_none():
+    """
+    Devuelve:
+      - dict {name: {"price":float,"delta":float}} si hay datos (fetch o snapshot)
+      - None si NO hay fetch y NO hay snapshot (primer arranque sin datos).
+    """
+    cur = fetch_usda_try_all()
+    prev = load_snap()
+    if cur:
+        # calcular delta vs prev y guardar
+        res = {}
+        for k,v in cur.items():
+            pv = prev.get(k); 
             if isinstance(pv, dict): pv = pv.get("price")
             dlt = 0.0 if pv is None else (float(v) - float(pv))
-            result[k] = {"price": float(v), "delta": float(dlt)}
-        save_snapshot(current)
-        if not prev: seeded = True
-        return result, False, seeded
+            res[k] = {"price": float(v), "delta": float(dlt)}
+        save_snap(cur)
+        return res
     if prev:
-        res = {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
-               for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
-        return res, True, False
-    placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
-    return placeholders, True, False
+        # usar snapshot, delta=0
+        return {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
+                for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
+    # ni fetch ni snapshot → None (no renderizamos, así NO salen guiones)
+    return None
 
-# ==================== UI ESTÁTICA (logo + cinta + estructura) ====================
-# (ya renderizado arriba)
-
-# ===== Placeholders para evitar parpadeo =====
-grid_top = st.container()
-with grid_top:
-    st.markdown("<div class='grid'>", unsafe_allow_html=True)
-    fx_ph     = st.empty()
-    res_ph    = st.empty()
-    cerdo_ph  = st.empty()
-    st.markdown("</div>", unsafe_allow_html=True)
-
+# ==================== PLACEHOLDERS (sin parpadeo) ====================
+st.markdown("<div class='grid'>", unsafe_allow_html=True)
+fx_ph, res_ph, cerdo_ph = st.empty(), st.empty(), st.empty()
+st.markdown("</div>", unsafe_allow_html=True)
 pollo_ph  = st.container()
 news_ph   = st.empty()
 footer_ph = st.empty()
 
-# ===== Render helpers =====
+# ==================== RENDER HELPERS ====================
 def render_fx(ph, fx, fx_delta):
     ph.markdown(f"""
-    <div class="card">
-      <div class="kpi">
-        <div class="left">
-          <div class="title">USD/MXN</div>
-          <div class="big {'green' if fx_delta>=0 else 'red'}">{fmt4(fx)}</div>
-          <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
-        </div>
-      </div>
-    </div>
+    <div class="card"><div class="kpi"><div class="left">
+      <div class="title">USD/MXN</div>
+      <div class="big {'green' if fx_delta>=0 else 'red'}">{fmt4(fx)}</div>
+      <div class="delta {'green' if fx_delta>=0 else 'red'}">{'▲' if fx_delta>=0 else '▼'} {fmt2(abs(fx_delta))}</div>
+    </div></div></div>
     """, unsafe_allow_html=True)
 
 def render_kpi(ph, titulo, price, chg):
     unit = "USD/100 lb"
     if price is None:
-        price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"
-        delta_html = ""
+        html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta=""
     else:
-        cls = "green" if (chg or 0) >= 0 else "red"
-        arrow = "▲" if (chg or 0) >= 0 else "▼"
-        price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
-        delta_html = f"<div class='delta {cls}'>{arrow} {fmt2(abs(chg))}</div>"
+        cls="green" if (chg or 0)>=0 else "red"; arr="▲" if (chg or 0)>=0 else "▼"
+        html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
+        delta = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     ph.markdown(f"""
-    <div class="card box">
-      <div class="kpi">
-        <div class="left"><div class="title">{titulo}</div>{price_html}</div>
-        {delta_html}
-      </div>
-    </div>
+    <div class="card box"><div class="kpi">
+      <div class="left"><div class="title">{titulo}</div>{html}</div>{delta}
+    </div></div>
     """, unsafe_allow_html=True)
 
-def render_poultry(ph_container, poultry, poultry_stale, poultry_seeded_now):
-    DISPLAY_ORDER = [
+def render_poultry(ph_container, data: dict, stale_badge: bool, seeded_badge: bool):
+    order = [
         "Breast - B/S","Breast T/S","Tenderloins","Wings, Whole","Wings, Drummettes",
         "Wings, Mid-Joint","Party Wings","Leg Quarters","Leg Meat - B/S",
         "Thighs - B/S","Thighs","Drumsticks","Whole Legs","Whole Broiler/Fryer",
     ]
-    rows = []
-    has_val = False
-    for k in DISPLAY_ORDER:
-        it = poultry.get(k)
+    rows=[]
+    for k in order:
+        it = data.get(k); 
         if not it: continue
         price, delta = it["price"], it["delta"]
-        if price is not None: has_val = True
         cls = "green" if (delta or 0) >= 0 else "red"
-        arrow = "▲" if (delta or 0) >= 0 else "▼"
-        price_txt = f"{fmt2(price)}" if price is not None else "—"
-        delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
+        arr = "▲" if (delta or 0) >= 0 else "▼"
         rows.append(
           f"<tr><td>{LABELS_ES.get(k,k)}</td>"
-          f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--poultry'>USD/lb</span></span> "
-          f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
+          f"<td><span class='price-lg'>{fmt2(price)} <span class='unit-inline--poultry'>USD/lb</span></span> "
+          f"<span class='price-delta {cls}'>{arr} {fmt2(abs(delta))}</span></td></tr>"
         )
-    if not rows:
-        rows = ["<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>"]
     badge = ""
-    if poultry_stale and has_val: badge = " <span class='badge'>último disponible</span>"
-    elif poultry_seeded_now:      badge = " <span class='badge'>actualizado</span>"
+    if stale_badge:  badge = " <span class='badge'>último disponible</span>"
+    if seeded_badge: badge = " <span class='badge'>actualizado</span>"
     ph_container.markdown(f"""
     <div class="card poultry-table">
       <div class="title" style="color:var(--txt);margin-bottom:6px">
@@ -398,37 +352,56 @@ def render_news(ph):
     k = int(time.time()//30) % len(noticias)
     text = noticias[k]
     ph.markdown(f"""
-    <div class='tape-news'>
-      <div class='tape-news-track'>
-        <div class='tape-news-group'><span class='item'>{text}</span></div>
-        <div class='tape-news-group' aria-hidden='true'><span class='item'>{text}</span></div>
-      </div>
-    </div>
+    <div class='tape-news'><div class='tape-news-track'>
+      <div class='tape-news-group'><span class='item'>{text}</span></div>
+      <div class='tape-news-group' aria-hidden='true'><span class='item'>{text}</span></div>
+    </div></div>
     """, unsafe_allow_html=True)
 
 # ==================== LOOP SIN PARPADEO ====================
+# Guarda el último HTML de pollo para no borrarlo si un ciclo falló sin snapshot
+if "last_poultry_html" not in st.session_state:
+    st.session_state["last_poultry_html"] = None
+
 while True:
     try:
-        fx        = get_fx()
-        fx_delta  = random.choice([+0.02, -0.02])
+        # FX y Futuros
+        fx = get_fx(); fx_delta = random.choice([+0.02, -0.02])
+        lc_px, lc_ch = get_yahoo_last("LE=F")
+        lh_px, lh_ch = get_yahoo_last("HE=F")
 
-        live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
-        lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
+        # Pollo: fetch/snapshot — nunca “—”
+        data = poultry_latest_or_none()
+        # flags para badge (si hubo fetch fallido pero snapshot sí, marcamos "último disponible")
+        stale_badge = False; seeded_badge = False
+        if data is not None:
+            # ¿veníamos con HTML previo? Si no había snapshot y ahora sí hay datos, “actualizado”
+            if st.session_state["last_poultry_html"] is None:
+                seeded_badge = True
+            # renderizamos y guardamos el HTML resultante
+            # (para saber si en el próximo ciclo debemos conservarlo o no)
+            with st.capture_output() as cap:
+                render_poultry(pollo_ph, data, stale_badge, seeded_badge)
+            st.session_state["last_poultry_html"] = cap.getvalue()
+        else:
+            # No hay fetch NI snapshot: no tocamos la UI (se mantiene último)
+            if st.session_state["last_poultry_html"]:
+                pollo_ph.markdown(st.session_state["last_poultry_html"], unsafe_allow_html=True)
 
-        poultry, poultry_stale, poultry_seeded_now = get_poultry_with_snapshot()
-
+        # Render FX y KPIs
         render_fx(fx_ph, fx, fx_delta)
-        render_kpi(res_ph,   "Res en pie",   live_cattle_px, live_cattle_ch)
-        render_kpi(cerdo_ph, "Cerdo en pie", lean_hogs_px,   lean_hogs_ch)
-        render_poultry(pollo_ph, poultry, poultry_stale, poultry_seeded_now)
+        render_kpi(res_ph,   "Res en pie",   lc_px, lc_ch)
+        render_kpi(cerdo_ph, "Cerdo en pie", lh_px, lh_ch)
+
+        # Noticias
         render_news(news_ph)
 
+        # Footer
         footer_ph.markdown(
             f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
             unsafe_allow_html=True,
         )
     except Exception:
-        # Si algo truena, no rompemos el bucle — próximo ciclo reintenta.
         pass
 
     time.sleep(60)
