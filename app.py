@@ -1,12 +1,5 @@
-# app.py — LaSultana Meat Index (hands-free)
-# - Bursátil (yfinance)
-# - USD/MXN (exchangerate.host)
-# - Res/Cerdo (LE=F / HE=F via Yahoo)
-# - Piezas de pollo (USDA AJ_PY018) con:
-#     * auto-fetch cada 60s (múltiples URLs)
-#     * parser robusto (Weighted Avg → rango → último número)
-#     * snapshot local automático (poultry_last.json)
-#     * NUNCA inventa datos: si no hay fetch, muestra último snapshot; si jamás hubo, muestra "—"
+# app.py — LaSultana Meat Index (hands-free) — cinta news 15% más rápida,
+# pollo: unit 15% más chica, nombres +10% y en español (estilo ComeCarne).
 
 import os, json, re, time, random, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -20,7 +13,6 @@ st.markdown("""
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b;
-  /* Cambiamos a Manrope como fuente corporativa principal */
   --font-sans: "Manrope", "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font-sans)!important}
@@ -36,7 +28,7 @@ footer {visibility:hidden;}
 /* LOGO */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
 
-/* CINTA SUPERIOR */
+/* CINTA SUPERIOR (stocks) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
@@ -56,16 +48,21 @@ footer {visibility:hidden;}
 .unit-inline{font-size:0.7em; color:var(--muted); font-weight:600; letter-spacing:.3px}
 
 /* TABLA POLLO */
-.table{width:100%;border-collapse:collapse}
-.table th,.table td{padding:10px;border-bottom:1px solid var(--line); vertical-align:middle}
-.table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
-.table td:last-child{text-align:right}
+.poultry-table{width:100%}
+.poultry-table table{width:100%;border-collapse:collapse}
+.poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line); vertical-align:middle}
+.poultry-table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
+/* +10% en nombre del producto */
+.poultry-table td:first-child{font-size:110%;}
+/* “USD/lb” 15% más chico SOLO en pollo */
+.unit-inline--poultry{font-size:0.60em; color:var(--muted); font-weight:600; letter-spacing:.3px}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
+.poultry-table td:last-child{text-align:right}
 
-/* NOTICIAS */
+/* NOTICIAS (15% más rápida → 177s * 0.85 ≈ 150s) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 177s linear infinite}
+.tape-news-track{display:flex;width:max-content;will-change:transform;animation:marqueeNewsFast 150s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNewsFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
@@ -188,7 +185,7 @@ def get_yahoo_last(sym: str):
 live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
 lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
 
-# ==================== USDA POULTRY PARTS (auto + snapshot) ====================
+# ==================== USDA POULTRY PARTS ====================
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -196,34 +193,52 @@ POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
 POULTRY_MAP = {
-    "Breast - B/S":        [r"BREAST\\s*-\\s*B/?S", r"BREAST,\\s*B/?S", r"BREAST\\s+B/?S"],
-    "Breast T/S":          [r"BREAST\\s*T/?S", r"STRAPLESS"],
+    "Breast - B/S":        [r"BREAST\s*-\s*B/?S", r"BREAST,\s*B/?S", r"BREAST\s+B/?S"],
+    "Breast T/S":          [r"BREAST\s*T/?S", r"STRAPLESS"],
     "Tenderloins":         [r"TENDERLOINS?"],
-    "Wings, Whole":        [r"WINGS?,\\s*WHOLE"],
+    "Wings, Whole":        [r"WINGS?,\s*WHOLE"],
     "Wings, Drummettes":   [r"DRUMMETTES?"],
-    "Wings, Mid-Joint":    [r"MID[\\-\\s]?JOINT", r"FLATS?"],
-    "Party Wings":         [r"PARTY\\s*WINGS?"],
-    "Leg Quarters":        [r"LEG\\s*QUARTERS?"],
-    "Leg Meat - B/S":      [r"LEG\\s*MEAT\\s*-\\s*B/?S"],
+    "Wings, Mid-Joint":    [r"MID[\-\s]?JOINT", r"FLATS?"],
+    "Party Wings":         [r"PARTY\s*WINGS?"],
+    "Leg Quarters":        [r"LEG\s*QUARTERS?"],
+    "Leg Meat - B/S":      [r"LEG\s*MEAT\s*-\s*B/?S"],
     "Thighs - B/S":        [r"THIGHS?.*B/?S"],
     "Thighs":              [r"THIGHS?(?!.*B/?S)"],
     "Drumsticks":          [r"DRUMSTICKS?"],
-    "Whole Legs":          [r"WHOLE\\s*LEGS?"],
-    "Whole Broiler/Fryer": [r"WHOLE\\s*BROILER/?FRYER", r"WHOLE\\s*BROILER\\s*-\\s*FRYER"],
+    "Whole Legs":          [r"WHOLE\s*LEGS?"],
+    "Whole Broiler/Fryer": [r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
+}
+
+# Etiquetas en español (estilo ComeCarne)
+LABELS_ES = {
+    "Breast - B/S":        "Pechuga sin hueso (B/S)",
+    "Breast T/S":          "Pechuga T/S (strapless)",
+    "Tenderloins":         "Tender de pechuga",
+    "Wings, Whole":        "Ala entera",
+    "Wings, Drummettes":   "Muslito de ala (drummette)",
+    "Wings, Mid-Joint":    "Media ala (flat)",
+    "Party Wings":         "Alitas mixtas (party wings)",
+    "Leg Quarters":        "Pierna-muslo (cuarto trasero)",
+    "Leg Meat - B/S":      "Carne de pierna B/S",
+    "Thighs - B/S":        "Muslo B/S",
+    "Thighs":              "Muslo con hueso",
+    "Drumsticks":          "Pierna (drumstick)",
+    "Whole Legs":          "Pierna entera",
+    "Whole Broiler/Fryer": "Pollo entero (broiler/fryer)",
 }
 
 def _extract_avg_from_line(line_upper: str) -> float | None:
-    m = re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)", line_upper)
+    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", line_upper)
     if m:
         try: return float(m.group(1))
         except: pass
-    m2 = re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)", line_upper)
+    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", line_upper)
     if m2:
         try:
             low = float(m2.group(1)); high = float(m2.group(2))
             return (low + high)/2.0
         except: pass
-    nums = re.findall(r"(\\d+(?:\\.\\d+)?)", line_upper)
+    nums = re.findall(r"(\d+(?:\.\d+)?)", line_upper)
     if nums:
         try: return float(nums[-1])
         except: return None
@@ -236,7 +251,7 @@ def fetch_usda_poultry_parts_try_all() -> dict:
             r = requests.get(url, timeout=12)
             if r.status_code != 200: continue
             txt = r.text
-            if "<html" in txt.lower():  # redirección/proxy
+            if "<html" in txt.lower():
                 continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
@@ -269,13 +284,7 @@ def save_snapshot(data: dict, path="poultry_last.json"):
         pass
 
 def get_poultry_with_snapshot():
-    """
-    Devuelve (result, stale, seeded):
-      - result: {display: {"price":float, "delta":float}}
-      - stale: True si se usó snapshot (no hubo fetch)
-      - seeded: True si fue la primera vez que guardamos snapshot ahora
-    """
-    current = fetch_usda_poultry_parts_try_all()  # intenta hoy
+    current = fetch_usda_poultry_parts_try_all()
     prev = load_snapshot()
     seeded = False
     if current:
@@ -341,7 +350,7 @@ st.markdown(kpi_card("Res en pie",   live_cattle_px, live_cattle_ch), unsafe_all
 st.markdown(kpi_card("Cerdo en pie", lean_hogs_px,   lean_hogs_ch),   unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# 3) Piezas de Pollo — tabla (hands-free)
+# 3) Piezas de Pollo — tabla (con español y tamaños)
 DISPLAY_ORDER = [
     "Breast - B/S", "Breast T/S", "Tenderloins",
     "Wings, Whole", "Wings, Drummettes", "Wings, Mid-Joint", "Party Wings",
@@ -360,17 +369,18 @@ for name in DISPLAY_ORDER:
     if price is not None: has_any_value = True
     cls = "green" if (delta or 0) >= 0 else "red"
     arrow = "▲" if (delta or 0) >= 0 else "▼"
+    display_name = LABELS_ES.get(name, name)  # ← nombres en español
     price_txt = f"{fmt2(price)}" if price is not None else "—"
     delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
     rows_html += (
         f"<tr>"
-        f"<td>{name}</td>"
-        f"<td><span class='price-lg'>{price_txt} <span class='unit-inline'>USD/lb</span></span> "
+        f"<td>{display_name}</td>"
+        f"<td><span class='price-lg'>{price_txt} "
+        f"<span class='unit-inline--poultry'>USD/lb</span></span> "
         f"<span class='price-delta {cls}'>{delta_txt}</span></td>"
         f"</tr>"
     )
 
-# >>>> Título EXACTO solicitado
 base_title = "Piezas de Pollo, Precios U.S. National (USDA)"
 badge = ""
 if poultry_stale and has_any_value:
@@ -382,11 +392,11 @@ if not rows_html:
     rows_html = ("<tr><td colspan='2' class='muted'>Preparando primeros datos de USDA…</td></tr>")
 
 st.markdown(f"""
-<div class="card">
+<div class="card poultry-table">
   <div class="title" style="color:var(--txt);margin-bottom:6px">
     {base_title}{badge}
   </div>
-  <table class="table">
+  <table>
     <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
     <tbody>{rows_html}</tbody>
   </table>
