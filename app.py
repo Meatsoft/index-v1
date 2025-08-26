@@ -5,7 +5,7 @@ import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# Oculta el widget de estado para evitar parpadeo de “Running/Reset”
+# Oculta el widget "Running/Reset" para disminuir parpadeo visual
 st.markdown("""
 <script>
 const mo=new MutationObserver(()=>{const s=document.querySelector('[data-testid="stStatusWidget"]'); if(s) s.style.display='none';});
@@ -30,7 +30,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* Logo */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
-/* Cinta bursátil */
+/* Cinta bursátil (superior) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
@@ -46,26 +46,26 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Tabla SOLO 3 pechugas — esquinas redondeadas en celdas (envoltorio) */
+/* Tabla SOLO 3 pechugas — esquinas redondeadas */
 .pechugas{border-radius:10px}
 .pechugas .table-shell{
   border:1px solid var(--line);
-  border-radius:12px;          /* <- redondeado visible */
-  overflow:hidden;             /* <- recorta las esquinas de las celdas */
+  border-radius:12px;
+  overflow:hidden;             /* recorta esquinas de celdas */
 }
 .pechugas table{width:100%;border-collapse:collapse}
 .pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;background:var(--panel)}
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .pechugas td:first-child{font-size:110%}
-.pechugas tbody tr:last-child td{border-bottom:none} /* sin línea en la última fila */
+.pechugas tbody tr:last-child td{border-bottom:none}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .pechugas td:last-child{text-align:right}
 
-/* Noticias — 12% más rápida (antes ~122s, ahora 107s) */
+/* Noticias (inferior) — 10% más rápida */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 107s linear infinite}
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 96s linear infinite}  /* <— antes 107s */
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
@@ -99,8 +99,10 @@ RECENCY_DAYS = 30
 
 @st.cache_data(ttl=90)
 def yahoo_meta_and_price(sym:str):
+    """Devuelve dict con last, delta, currency y timestamp del último dato."""
     try:
         t = yf.Ticker(sym)
+        # Moneda
         curr = None
         try: curr = t.fast_info.get("currency")
         except: pass
@@ -162,7 +164,7 @@ for name, sym in COMPANIES_USD:
     else:
         cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
-line="".join(items)
+line="".join(items) or "<span class='item muted'>Sin datos USD recientes</span>"
 st.markdown(f"""
 <div class='tape'><div class='tape-track'>
   <div class='tape-group'>{line}</div>
@@ -319,10 +321,4 @@ st.markdown(f"""
 </div></div>""", unsafe_allow_html=True)
 
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
-  unsafe_allow_html=True
-)
-
-# Refresh suave (sin st.autorefresh)
-time.sleep(60)
-st.rerun()
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USD
