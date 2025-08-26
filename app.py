@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (USD-only tickers, sin st.autorefresh)
+# app.py — LaSultana Meat Index (ajuste bordes pechugas + cinta inferior +12%)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 import pandas as pd
@@ -46,8 +46,8 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Tabla SOLO 3 pechugas (bordes como antes) */
-.pechugas{border-radius:10px}
+/* Tabla SOLO 3 pechugas (bordes redondeados) */
+.pechugas{border-radius:10px;overflow:hidden}
 .pechugas table{width:100%;border-collapse:collapse}
 .pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
@@ -57,9 +57,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .pechugas td:last-child{text-align:right}
 
-/* Noticias (5% más rápida respecto a la anterior ~122s) */
+/* Noticias (12% más rápida respecto a 122s ≈ 108s) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 122s linear infinite}
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 108s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
@@ -81,7 +81,6 @@ if os.path.exists("ILSMeatIndex.png"):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ================= CINTA (solo USD + reciente) =================
-# Dejamos solo emisoras en USD/firmes para evitar “grises”.
 COMPANIES_USD = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"),
     ("BRF","BRFS"), ("Hormel Foods","HRL"), ("Seaboard","SEB"),
@@ -96,62 +95,51 @@ RECENCY_DAYS = 30
 def yahoo_meta_and_price(sym:str):
     try:
         t = yf.Ticker(sym)
-        curr = None
+        curr=None
         try: curr = t.fast_info.get("currency")
         except: pass
         if not curr:
-            try: curr = (t.info or {}).get("currency")
+            try: curr=(t.info or {}).get("currency")
             except: pass
-
-        last, delta = None, None
+        last,delta=None,None
         try:
-            fi = t.fast_info
-            last = fi.get("last_price")
-            prev = fi.get("previous_close")
-            if last is not None and prev is not None:
-                last = float(last); delta = float(last) - float(prev)
+            fi=t.fast_info
+            last=fi.get("last_price"); prev=fi.get("previous_close")
+            if last and prev: last=float(last); delta=float(last)-float(prev)
         except: pass
         if last is None:
             try:
-                inf = t.info or {}
-                last = inf.get("regularMarketPrice")
-                prev = inf.get("regularMarketPreviousClose")
-                if last is not None and prev is not None:
-                    last = float(last); delta = float(last) - float(prev)
+                inf=t.info or {}
+                last=inf.get("regularMarketPrice"); prev=inf.get("regularMarketPreviousClose")
+                if last and prev: last=float(last); delta=float(last)-float(prev)
             except: pass
-
-        last_ts = None
+        last_ts=None
         try:
-            hist = t.history(period="2mo", interval="1d")
+            hist=t.history(period="2mo",interval="1d")
             if hist is not None and not hist.empty:
-                last_ts = pd.to_datetime(hist.index[-1]).to_pydatetime()
+                last_ts=pd.to_datetime(hist.index[-1]).to_pydatetime()
                 if last is None:
-                    close = hist["Close"].dropna()
-                    if not close.empty:
-                        last = float(close.iloc[-1])
-                        if close.shape[0] >= 2:
-                            delta = last - float(close.iloc[-2])
+                    c=hist["Close"].dropna()
+                    if not c.empty:
+                        last=float(c.iloc[-1])
+                        if c.shape[0]>=2: delta=last-float(c.iloc[-2])
         except: pass
-
-        if last is None:
-            return None
-        return {"last": last, "delta": delta, "currency": curr, "last_ts": last_ts}
-    except:
-        return None
+        if last is None: return None
+        return {"last":last,"delta":delta,"currency":curr,"last_ts":last_ts}
+    except: return None
 
 def is_fresh_usd(meta:dict)->bool:
     if not meta: return False
-    if meta.get("currency") != "USD": return False
-    ts = meta.get("last_ts")
+    if meta.get("currency")!="USD": return False
+    ts=meta.get("last_ts")
     if not ts: return True
-    return (dt.datetime.utcnow() - ts.replace(tzinfo=None)).days <= RECENCY_DAYS
+    return (dt.datetime.utcnow()-ts.replace(tzinfo=None)).days<=RECENCY_DAYS
 
 items=[]
-for name, sym in COMPANIES_USD:
-    meta = yahoo_meta_and_price(sym)
-    if not is_fresh_usd(meta): 
-        continue
-    last = meta["last"]; chg = meta["delta"]
+for name,sym in COMPANIES_USD:
+    meta=yahoo_meta_and_price(sym)
+    if not is_fresh_usd(meta): continue
+    last,chg=meta["last"],meta["delta"]
     if chg is None:
         items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
@@ -167,15 +155,15 @@ st.markdown(f"""
 # ================= FX & FUTUROS (Yahoo) =================
 @st.cache_data(ttl=75)
 def q(sym:str):
-    meta = yahoo_meta_and_price(sym)
-    if not meta: return None, None
-    return meta["last"], meta["delta"]
+    meta=yahoo_meta_and_price(sym)
+    if not meta: return None,None
+    return meta["last"],meta["delta"]
 
-fx,fx_chg = q("MXN=X")
-lc,lc_chg = q("LE=F")    # Live Cattle (front month)
-lh,lh_chg = q("HE=F")    # Lean Hogs  (front month)
+fx,fx_chg=q("MXN=X")
+lc,lc_chg=q("LE=F")
+lh,lh_chg=q("HE=F")
 
-def kpi(title, price, chg):
+def kpi(title,price,chg):
     unit="USD/100 lb"
     if price is None:
         price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta_html=""
@@ -190,11 +178,11 @@ def kpi(title, price, chg):
       <div><div class="title">{title}</div>{price_html}</div>{delta_html}
     </div></div>"""
 
-st.markdown("<div class='grid'>", unsafe_allow_html=True)
-st.markdown(kpi("USD/MXN", fx, fx_chg), unsafe_allow_html=True)
-st.markdown(kpi("Res en pie", lc, lc_chg), unsafe_allow_html=True)
-st.markdown(kpi("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("<div class='grid'>",unsafe_allow_html=True)
+st.markdown(kpi("USD/MXN",fx,fx_chg),unsafe_allow_html=True)
+st.markdown(kpi("Res en pie",lc,lc_chg),unsafe_allow_html=True)
+st.markdown(kpi("Cerdo en pie",lh,lh_chg),unsafe_allow_html=True)
+st.markdown("</div>",unsafe_allow_html=True)
 
 # ================= USDA — SOLO 3 PECHUGAS =================
 POULTRY_URLS=[
@@ -205,18 +193,18 @@ POULTRY_URLS=[
 ]
 HDR={"User-Agent":"Mozilla/5.0"}
 PECHUGAS_PAT={
- "Pechuga B/S Jumbo":[r"BREAST.*B/?S.*JUMBO", r"JUMBO.*BREAST.*B/?S"],
- "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
- "Pechuga T/S (strapless)":[r"BREAST\s*T/?S", r"STRAPLESS"],
+ "Pechuga B/S Jumbo":[r"BREAST.*B/?S.*JUMBO",r"JUMBO.*BREAST.*B/?S"],
+ "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)",r"BREAST,\s*B/?S(?!.*JUMBO)"],
+ "Pechuga T/S (strapless)":[r"BREAST\s*T/?S",r"STRAPLESS"],
 }
 def _avg(U:str):
     m=re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)",U)
-    if m:
+    if m: 
         try:return float(m.group(1))
         except: pass
     m2=re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",U)
     if m2:
-        try: return (float(m2.group(1))+float(m2.group(2)))/2.0
+        try:return (float(m2.group(1))+float(m2.group(2)))/2.0
         except: pass
     nums=re.findall(r"(\d+(?:\.\d+)?)",U)
     if nums:
@@ -237,8 +225,7 @@ def fetch_pechugas()->dict:
                     U=ln.upper()
                     if any(re.search(p,U) for p in pats):
                         v=_avg(U)
-                        if v is not None:
-                            out[disp]=v; break
+                        if v is not None: out[disp]=v; break
             if out: return out
         except: continue
     return {}
@@ -246,7 +233,7 @@ def fetch_pechugas()->dict:
 SNAP="poultry_last_pechugas.json"
 def load_snap():
     if not os.path.exists(SNAP): return {}
-    try:
+    try: 
         with open(SNAP,"r") as f: return json.load(f)
     except: return {}
 def save_snap(d:dict):
@@ -272,12 +259,12 @@ def pechugas_with_snapshot():
     base={k:{"price":None,"delta":0.0} for k in PECHUGAS_PAT.keys()}
     return base,True,False
 
-pech, stale, seeded = pechugas_with_snapshot()
+pech,stale,seeded=pechugas_with_snapshot()
 order=["Pechuga B/S Jumbo","Pechuga B/S","Pechuga T/S (strapless)"]
 rows=[]
 for name in order:
-    it=pech.get(name, {"price":None,"delta":0.0})
-    price,delta=it["price"], it["delta"]
+    it=pech.get(name,{"price":None,"delta":0.0})
+    price,delta=it["price"],it["delta"]
     cls="up" if (delta or 0)>=0 else "down"; arr="▲" if (delta or 0)>=0 else "▼"
     price_txt=fmt2(price) if price is not None else "—"
     delta_txt=f"{arr} {fmt2(abs(delta))}" if price is not None else "—"
@@ -292,7 +279,7 @@ st.markdown(f"""
   <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo, Precios U.S. National (USDA){badge}</div>
   <table><thead><tr><th>Producto</th><th>Precio</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
 </div>
-""", unsafe_allow_html=True)
+""",unsafe_allow_html=True)
 
 # ===== Noticias + pie =====
 news=[
@@ -306,13 +293,13 @@ st.markdown(f"""
 <div class='tape-news'><div class='tape-news-track'>
   <div class='tape-news-group'><span class='item'>{news[k]}</span></div>
   <div class='tape-news-group' aria-hidden='true'><span class='item'>{news[k]}</span></div>
-</div></div>""", unsafe_allow_html=True)
+</div></div>""",unsafe_allow_html=True)
 
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True
 )
 
-# ---- Auto-refresh suave y compatible (sin st.autorefresh)
+# ---- Auto-refresh suave
 time.sleep(60)
 st.rerun()
