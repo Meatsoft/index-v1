@@ -5,7 +5,7 @@ import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# Oculta el widget "Running/Reset" para disminuir parpadeo visual
+# Oculta el widget de estado (“Running / Reset”) para evitar parpadeo visible
 st.markdown("""
 <script>
 const mo=new MutationObserver(()=>{const s=document.querySelector('[data-testid="stStatusWidget"]'); if(s) s.style.display='none';});
@@ -30,7 +30,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* Logo */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
-/* Cinta bursátil (superior) */
+/* Cinta bursátil */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
@@ -46,26 +46,21 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Tabla SOLO 3 pechugas — esquinas redondeadas */
+/* Tabla SOLO 3 pechugas — con esquinas redondeadas internas */
 .pechugas{border-radius:10px}
-.pechugas .table-shell{
-  border:1px solid var(--line);
-  border-radius:12px;
-  overflow:hidden;             /* recorta esquinas de celdas */
-}
-.pechugas table{width:100%;border-collapse:collapse}
-.pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;background:var(--panel)}
+.pechugas .tbl{border-radius:10px; overflow:hidden;}   /* recorta las esquinas */
+.pechugas table{width:100%;border-collapse:separate;border-spacing:0}
+.pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;background:transparent}
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .pechugas td:first-child{font-size:110%}
-.pechugas tbody tr:last-child td{border-bottom:none}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .pechugas td:last-child{text-align:right}
 
-/* Noticias (inferior) — 10% más rápida */
+/* Noticias — 22% más rápida (122s -> ~95s) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 96s linear infinite}  /* <— antes 107s */
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 95s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
@@ -99,10 +94,8 @@ RECENCY_DAYS = 30
 
 @st.cache_data(ttl=90)
 def yahoo_meta_and_price(sym:str):
-    """Devuelve dict con last, delta, currency y timestamp del último dato."""
     try:
         t = yf.Ticker(sym)
-        # Moneda
         curr = None
         try: curr = t.fast_info.get("currency")
         except: pass
@@ -156,7 +149,7 @@ def is_fresh_usd(meta:dict)->bool:
 items=[]
 for name, sym in COMPANIES_USD:
     meta = yahoo_meta_and_price(sym)
-    if not is_fresh_usd(meta):
+    if not is_fresh_usd(meta): 
         continue
     last = meta["last"]; chg = meta["delta"]
     if chg is None:
@@ -164,7 +157,7 @@ for name, sym in COMPANIES_USD:
     else:
         cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
-line="".join(items) or "<span class='item muted'>Sin datos USD recientes</span>"
+line="".join(items)
 st.markdown(f"""
 <div class='tape'><div class='tape-track'>
   <div class='tape-group'>{line}</div>
@@ -179,8 +172,8 @@ def q(sym:str):
     return meta["last"], meta["delta"]
 
 fx,fx_chg = q("MXN=X")
-lc,lc_chg = q("LE=F")
-lh,lh_chg = q("HE=F")
+lc,lc_chg = q("LE=F")    # Live Cattle front month
+lh,lh_chg = q("HE=F")    # Lean Hogs  front month
 
 def kpi(title, price, chg):
     unit="USD/100 lb"
@@ -213,19 +206,19 @@ POULTRY_URLS=[
 HDR={"User-Agent":"Mozilla/5.0"}
 PECHUGAS_PAT={
  "Pechuga B/S Jumbo":[r"BREAST.*B/?S.*JUMBO", r"JUMBO.*BREAST.*B/?S"],
- "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
- "Pechuga T/S (strapless)":[r"BREAST\s*T/?S", r"STRAPLESS"],
+ "Pechuga B/S":[r"BREAST\\s*-\\s*B/?S(?!.*JUMBO)", r"BREAST,\\s*B/?S(?!.*JUMBO)"],
+ "Pechuga T/S (strapless)":[r"BREAST\\s*T/?S", r"STRAPLESS"],
 }
 def _avg(U:str):
-    m=re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)",U)
+    m=re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)",U)
     if m:
         try:return float(m.group(1))
         except: pass
-    m2=re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",U)
+    m2=re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)",U)
     if m2:
         try: return (float(m2.group(1))+float(m2.group(2)))/2.0
         except: pass
-    nums=re.findall(r"(\d+(?:\.\d+)?)",U)
+    nums=re.findall(r"(\\d+(?:\\.\\d+)?)",U)
     if nums:
         try:return float(nums[-1])
         except: return None
@@ -297,7 +290,7 @@ badge=" <span class='badge'>último disponible</span>" if stale else (" <span cl
 st.markdown(f"""
 <div class="card pechugas">
   <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo, Precios U.S. National (USDA){badge}</div>
-  <div class="table-shell">
+  <div class="tbl">
     <table>
       <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
       <tbody>{''.join(rows)}</tbody>
@@ -321,4 +314,10 @@ st.markdown(f"""
 </div></div>""", unsafe_allow_html=True)
 
 st.markdown(
-  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USD
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+  unsafe_allow_html=True
+)
+
+# Refresh suave (sin st.autorefresh, evita parpadeos)
+time.sleep(60)
+st.rerun()
