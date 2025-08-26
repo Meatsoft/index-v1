@@ -1,27 +1,19 @@
-# app.py — LaSultana Meat Index (3 pechugas + cinta completa)
+# app.py — LaSultana Meat Index (USD-only tickers + freshness filter)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
+import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# --- refresco suave sin “reset” visible ---
-st_autorefresh = st.experimental_rerun  # compat alias (para linters)
-st.markdown(
-    """
-    <script>
-      // Evita mostrar spinners durante el autorefresh
-      const mo = new MutationObserver(() => {
-        const s = document.querySelector('[data-testid="stStatusWidget"]');
-        if (s) s.style.display = 'none';
-      });
-      mo.observe(document.body, {subtree:true, childList:true});
-    </script>
-    """,
-    unsafe_allow_html=True
-)
-# Usa st_autorefresh oficial (no muestra contador)
+# -------- autorefresh suave (sin spinner/reset) --------
 st.experimental_set_query_params(ts=int(time.time()//60))
-st.autorefresh(interval=60_000, key="autor", help=None)
+st.autorefresh(interval=60_000, key="autor")
+st.markdown("""
+<script>
+const mo=new MutationObserver(()=>{const s=document.querySelector('[data-testid="stStatusWidget"]'); if(s) s.style.display='none';});
+mo.observe(document.body,{subtree:true,childList:true});
+</script>
+""", unsafe_allow_html=True)
 
 # ============ ESTILOS ============
 st.markdown("""
@@ -57,8 +49,8 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* Tabla SOLO 3 pechugas */
-.pechugas { border-radius:10px; } /* solo el card redondeado, como antes */
-.pechugas table{width:100%;border-collapse:collapse;border-radius:0!important;overflow:visible!important}
+.pechugas{border-radius:10px}
+.pechugas table{width:100%;border-collapse:collapse}
 .pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle;border-radius:0!important}
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .pechugas td:first-child{font-size:110%}
@@ -67,12 +59,11 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .pechugas td:last-child{text-align:right}
 
-/* Noticias (5% más rápido que 135s → ~128s) */
+/* Noticias (ligeramente más rápida ~128s) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 128s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-
 .caption{color:var(--muted)!important}
 .badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;margin-left:8px}
 </style>
@@ -91,55 +82,104 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ============ Cinta bursátil (lista completa) ============
-COMPANIES = [
-    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
-    ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
-    ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"),
-    ("WH Group","WHGLY"), ("Minupar Participações","MNPR3.SA"),
-    ("Excelsior Alimentos","BAUH4.SA"), ("Wens Foodstuff Group","300498.SZ"),
+# ============ Lista completa (sin filtrar) ============
+FULL_COMPANIES = [
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"),
+    ("BRF","BRFS"), ("Hormel Foods","HRL"), ("Seaboard","SEB"),
+    ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
+    ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"),
+    ("Vital Farms","VITL"), ("Grupo KUO","KUOB.MX"),
+    ("Grupo Bafar","BAFARB.MX"), ("WH Group","WHGLY"),
+    ("Minupar Participações","MNPR3.SA"), ("Excelsior Alimentos","BAUH4.SA"),
+    ("Wens Foodstuff Group","300498.SZ"),
     ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
     ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
     ("Walmart","WMT"), ("Alsea","ALSEA.MX"),
 ]
 
-@st.cache_data(ttl=75)
-def q(sym:str):
-    """Devuelve (last, delta) usando Yahoo con varias rutas de fallback."""
-    try:
-        t = yf.Ticker(sym); fi = t.fast_info
-        last = fi.get("last_price", None); prev = fi.get("previous_close", None)
-        if last is not None:
-            return float(last), (float(last)-float(prev)) if prev is not None else None
-    except: pass
-    try:
-        inf = yf.Ticker(sym).info or {}
-        last = inf.get("regularMarketPrice", None); prev = inf.get("regularMarketPreviousClose", None)
-        if last is not None:
-            return float(last), (float(last)-float(prev)) if prev is not None else None
-    except: pass
-    try:
-        d = yf.Ticker(sym).history(period="10d", interval="1d")
-        if d is None or d.empty: return None, None
-        c = d["Close"].dropna()
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
-        return last, (last - prev) if prev is not None else None
-    except:
-        return None, None
+RECENCY_DAYS = 30  # solo “firmes/actualizados” recientes y en USD
 
+@st.cache_data(ttl=90)
+def yahoo_meta_and_price(sym:str):
+    """return dict: {last, delta, currency, last_ts} o None si no hay datos usables."""
+    try:
+        t = yf.Ticker(sym)
+        # moneda
+        curr = None
+        try:
+            curr = t.fast_info.get("currency")
+        except: pass
+        if not curr:
+            try:
+                curr = (t.info or {}).get("currency")
+            except: pass
+
+        # precios
+        last, delta = None, None
+        try:
+            fi = t.fast_info
+            last = fi.get("last_price")
+            prev = fi.get("previous_close")
+            if last is not None and prev is not None:
+                last = float(last); delta = float(last) - float(prev)
+        except: pass
+        if last is None:
+            try:
+                inf = t.info or {}
+                last = inf.get("regularMarketPrice")
+                prev = inf.get("regularMarketPreviousClose")
+                if last is not None and prev is not None:
+                    last = float(last); delta = float(last) - float(prev)
+            except: pass
+
+        # recencia
+        last_ts = None
+        try:
+            hist = t.history(period="2mo", interval="1d")
+            if hist is not None and not hist.empty:
+                last_ts = pd.to_datetime(hist.index[-1]).to_pydatetime()
+                if last is None:
+                    last = float(hist["Close"].dropna().iloc[-1])
+                    if hist.shape[0] >= 2:
+                        prev = float(hist["Close"].dropna().iloc[-2]); delta = last - prev
+        except: pass
+
+        if last is None:
+            return None
+        return {"last": last, "delta": delta, "currency": curr, "last_ts": last_ts}
+    except:
+        return None
+
+def is_fresh_usd(meta:dict)->bool:
+    if not meta: return False
+    if meta.get("currency") != "USD": return False
+    ts = meta.get("last_ts")
+    if not ts: return True  # si Yahoo no da fecha pero hay last, dejamos pasar
+    return (dt.datetime.utcnow() - ts.replace(tzinfo=None)).days <= RECENCY_DAYS
+
+# Filtrar: USD + reciente
+filtered = []
+for name, sym in FULL_COMPANIES:
+    meta = yahoo_meta_and_price(sym)
+    if is_fresh_usd(meta):
+        filtered.append((name, sym, meta))
+# Si por alguna razón nada pasa el filtro, usa un fallback sano
+if not filtered:
+    baseline = ["TSN","PPC","BRFS","HRL","SEB","MRVSY","CALM","VITL","WHGLY","WING","YUM","QSR","SYY","USFD","PFGC","WMT"]
+    for name, sym in FULL_COMPANIES:
+        if sym in baseline:
+            meta = yahoo_meta_and_price(sym)
+            if meta: filtered.append((name, sym, meta))
+
+# Render cinta
 items=[]
-for name,sym in COMPANIES:
-    last,chg=q(sym)
-    if last is None:
-        items.append(f"<span class='item'>{name} ({sym}) <b class='muted'>—</b></span>")
+for name, sym, meta in filtered:
+    last = meta["last"]; chg = meta["delta"]
+    if chg is None:
+        items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
-        if chg is None:
-            items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
-        else:
-            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
+        cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
+        items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
 line="".join(items)
 st.markdown(f"""
 <div class='tape'><div class='tape-track'>
@@ -147,15 +187,16 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ============ FX y futuros (desde Yahoo) ============
+# ============ FX y futuros (Yahoo) ============
 @st.cache_data(ttl=75)
-def get_fx():  return q("MXN=X")
-@st.cache_data(ttl=75)
-def get_last(sym:str): return q(sym)
+def q(sym:str):
+    meta = yahoo_meta_and_price(sym)
+    if not meta: return None, None
+    return meta["last"], meta["delta"]
 
-fx,fx_chg = get_fx()
-lc,lc_chg = get_last("LE=F")   # Live Cattle (front-month)
-lh,lh_chg = get_last("HE=F")   # Lean Hogs (front-month)
+fx,fx_chg = q("MXN=X")
+lc,lc_chg = q("LE=F")
+lh,lh_chg = q("HE=F")
 
 def kpi(title, price, chg):
     unit="USD/100 lb"
@@ -237,17 +278,15 @@ def save_snap(d:dict):
     except: pass
 
 def pechugas_with_snapshot():
-    cur=fetch_pechugas()
-    prev=load_snap()
-    seeded=False
+    cur=fetch_pechugas(); prev=load_snap(); seeded=False
     if cur:
         res={}
         for k,v in cur.items():
-            pv=prev.get(k,None)
+            pv=prev.get(k,None); 
             if isinstance(pv,dict): pv=pv.get("price")
             dlt=0.0 if pv is None else (float(v)-float(pv))
             res[k]={"price":float(v),"delta":float(dlt)}
-        save_snap(cur)
+        save_snap(cur); 
         if not prev: seeded=True
         return res,False,seeded
     if prev:
