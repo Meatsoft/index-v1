@@ -1,12 +1,21 @@
-# app.py — LaSultana Meat Index (3 pechugas, cinta completa, flicker-free)
-import os, json, re, time, datetime as dt
+# app.py — LaSultana Meat Index (3 pechugas + cinta completa + autorefresh suave)
+import os, json, re, datetime as dt
 import requests, streamlit as st, yfinance as yf
+import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
-try: st.cache_data.clear()
-except: pass
 
-# ============ ESTILOS (sin flicker / sin reset UI) ============
+# autorefresh SUAVE cada 60s (sin sleep/rerun)
+st.experimental_data_editor  # no-op to ensure session readiness
+st_autoref = st.experimental_singleton(lambda: None)  # dummy to keep state
+st.autorefresh = st.autorefresh if hasattr(st, "autorefresh") else None
+try:
+    from streamlit_autorefresh import st_autorefresh  # si lo tienes
+except Exception:
+    def st_autorefresh(*args, **kwargs): pass
+st_autorefresh(interval=60_000, key="tick60")
+
+# ======= ESTILOS =======
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -17,22 +26,16 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
-
-/* Ocultar header/toolbar/status para que no se vea el "Reset/RUNNING…" */
-header[data-testid="stHeader"]{display:none !important;}
-#MainMenu{visibility:hidden !important;}
-footer{visibility:hidden !important;}
-div[data-testid="stToolbar"]{display:none !important;}
-div[data-testid="stStatusWidget"]{display:none !important;}
-/* Oculta spinner global */
-div[role="alert"] .stSpinner, .stSpinner{display:none !important;}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:18px}
+header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
+/* Ocultar “running/reset” */
+div[data-testid="stStatusWidget"], div[data-testid="stToolbar"] {display:none !important}
 
 /* Logo */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
 /* Cinta bursátil */
-.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
+.tape{border:1px solid var(--line);border-radius:14px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
@@ -48,8 +51,11 @@ div[role="alert"] .stSpinner, .stSpinner{display:none !important;}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* Tabla SOLO 3 pechugas */
-.pechugas table{width:100%;border-collapse:collapse}
-.pechugas th,.pechugas td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
+.pechugas{overflow:hidden;border-radius:14px} /* redondeo del contenedor */
+.pechugas table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);
+  border-radius:14px; overflow:hidden;}
+.pechugas th,.pechugas td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:middle;background:var(--panel)}
+.pechugas tr:last-child td{border-bottom:none}
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .pechugas td:first-child{font-size:110%}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
@@ -57,18 +63,16 @@ div[role="alert"] .stSpinner, .stSpinner{display:none !important;}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .pechugas td:last-child{text-align:right}
 
-/* Noticias (12% más rápida → 150s / 1.12 ≈ 134s) */
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 134s linear infinite;will-change:transform}
+/* Noticias (10% más rápido vs 150s => 135s) */
+.tape-news{border:1px solid var(--line);border-radius:14px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 135s linear infinite;will-change:transform}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-
 .caption{color:var(--muted)!important}
 .badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;margin-left:8px}
 </style>
 """, unsafe_allow_html=True)
 
-# ============ Helpers ============
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -76,59 +80,69 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ============ Logo ============
+# ======= LOGO =======
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ============ Cinta bursátil (lista completa) ============
+# ======= CINTA BURSÁTIL (lista extendida) =======
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
     ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"),
-    ("WH Group","WHGLY"), ("Minupar Participações","MNPR3.SA"),
-    ("Excelsior Alimentos","BAUH4.SA"), ("Wens Foodstuff Group","300498.SZ"),
+    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"), ("WH Group","WHGLY"),
+    ("Minupar Participações","MNPR3.SA"), ("Excelsior Alimentos","BAUH4.SA"),
+    ("Wens Foodstuff Group","300498.SZ"),
     ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
     ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
     ("Walmart","WMT"), ("Alsea","ALSEA.MX"),
 ]
 
 @st.cache_data(ttl=75)
-def q(sym:str):
-    """Last y cambio vs previous close (Yahoo). Fallback: último cierre."""
+def robust_last(sym: str):
+    """Precio 'last' y delta vs prev, prioriza 1m -> 5m -> diario -> info."""
     try:
         t = yf.Ticker(sym)
+        for itv in ("1m","5m"):
+            h = t.history(period="1d", interval=itv)
+            if isinstance(h, pd.DataFrame) and not h.empty:
+                c = h["Close"].dropna()
+                if len(c) >= 1:
+                    last = float(c.iloc[-1])
+                    prev = float(c.iloc[-2]) if len(c) >= 2 else None
+                    delta = (last - prev) if prev is not None else None
+                    return last, delta
+        d = t.history(period="10d", interval="1d")
+        if isinstance(d, pd.DataFrame) and not d.empty:
+            c = d["Close"].dropna()
+            if len(c) >= 1:
+                last = float(c.iloc[-1])
+                prev = float(c.iloc[-2]) if len(c) >= 2 else None
+                delta = (last - prev) if prev is not None else None
+                return last, delta
+        # fallback a fast_info/info
         fi = t.fast_info
-        last = fi.get("last_price", None); prev = fi.get("previous_close", None)
+        last = fi.get("last_price", None)
+        prev = fi.get("previous_close", None)
         if last is not None:
-            chg = (float(last) - float(prev)) if (prev is not None) else None
-            return float(last), chg
-    except: 
-        pass
-    try:
-        inf = yf.Ticker(sym).info or {}
-        last = inf.get("regularMarketPrice", None)
-        prev = inf.get("regularMarketPreviousClose", None)
+            last = float(last)
+            delta = (last - float(prev)) if prev is not None else None
+            return last, delta
+        info = t.info or {}
+        last = info.get("regularMarketPrice", None)
+        prev = info.get("regularMarketPreviousClose", None)
         if last is not None:
-            chg = (float(last) - float(prev)) if (prev is not None) else None
-            return float(last), chg
-    except:
+            last = float(last)
+            delta = (last - float(prev)) if prev is not None else None
+            return last, delta
+    except Exception:
         pass
-    try:
-        d = yf.Ticker(sym).history(period="10d", interval="1d")
-        if d is None or d.empty: return None, None
-        c = d["Close"].dropna()
-        last = float(c.iloc[-1]); prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
-        chg = (last - prev) if prev is not None else None
-        return last, chg
-    except:
-        return None, None
+    return None, None
 
 items=[]
 for name,sym in COMPANIES:
-    last,chg = q(sym)
+    last,chg = robust_last(sym)
     if last is None:
         items.append(f"<span class='item'>{name} ({sym}) <b class='muted'>—</b></span>")
     else:
@@ -144,15 +158,15 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ============ FX (Yahoo) y futuros CME (Yahoo) ============
+# ======= USD/MXN y Futuros (Yahoo) =======
 @st.cache_data(ttl=75)
-def get_fx():      return q("MXN=X")   # USD/MXN desde Yahoo
-@st.cache_data(ttl=75)
-def get_last(sym): return q(sym)       # wrapper general
-
+def get_fx(): return robust_last("MXN=X")
 fx, fx_chg = get_fx()
-lc, lc_chg = get_last("LE=F")   # Live Cattle (CME)
-lh, lh_chg = get_last("HE=F")   # Lean Hogs (CME)  <-- corregido y aislado
+
+@st.cache_data(ttl=75)
+def get_last(sym: str): return robust_last(sym)
+lc, lc_chg = get_last("LE=F")   # Live Cattle (USD/100 lb)
+lh, lh_chg = get_last("HE=F")   # Lean Hogs (USD/100 lb)
 
 def kpi(title, price, chg):
     unit="USD/100 lb"
@@ -175,7 +189,7 @@ st.markdown(kpi("Res en pie", lc, lc_chg), unsafe_allow_html=True)
 st.markdown(kpi("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ============ USDA — SOLO 3 PECHUGAS (con snapshot) ============
+# ======= USDA — SOLO 3 PECHUGAS =======
 POULTRY_URLS=[
  "https://www.ams.usda.gov/mnreports/aj_py018.txt",
  "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -219,8 +233,7 @@ def fetch_pechugas()->dict:
                         if v is not None:
                             out[disp]=v; break
             if out: return out
-        except: 
-            continue
+        except: continue
     return {}
 
 SNAP="poultry_last_pechugas.json"
@@ -276,30 +289,21 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ============ Noticias (12% más rápida ya en CSS) ============
+# ======= Noticias / pie =======
 news=[
-  "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
+  "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada; foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
   "Pechuga B/S estable en contratos; oferta amplia presiona piezas oscuras.",
   "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
 ]
-k=int(time.time()//30)%len(news)
+k=int(dt.datetime.now().timestamp()//30)%len(news)
 st.markdown(f"""
 <div class='tape-news'><div class='tape-news-track'>
   <div class='tape-news-group'><span class='item'>{news[k]}</span></div>
   <div class='tape-news-group' aria-hidden='true'><span class='item'>{news[k]}</span></div>
 </div></div>""", unsafe_allow_html=True)
 
-# Pie
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True
 )
-
-# ============ Auto refresh sin sleep (menos parpadeo) ============
-# Sin time.sleep(); programático y silencioso.
-if "last_refresh" not in st.session_state:
-    st.session_state.last_refresh = time.time()
-elif time.time() - st.session_state.last_refresh >= 60:
-    st.session_state.last_refresh = time.time()
-    st.experimental_rerun()
