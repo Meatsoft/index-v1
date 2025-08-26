@@ -5,17 +5,14 @@ import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# autorefresh SUAVE cada 60s (sin sleep/rerun)
-st.experimental_data_editor  # no-op to ensure session readiness
-st_autoref = st.experimental_singleton(lambda: None)  # dummy to keep state
-st.autorefresh = st.autorefresh if hasattr(st, "autorefresh") else None
+# ===== autorefresh SUAVE cada 60s (sin sleep/rerun) =====
 try:
-    from streamlit_autorefresh import st_autorefresh  # si lo tienes
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=60_000, key="tick60")
 except Exception:
-    def st_autorefresh(*args, **kwargs): pass
-st_autorefresh(interval=60_000, key="tick60")
+    pass  # si no está instalado, se queda sin autorefresh
 
-# ======= ESTILOS =======
+# ===== ESTILOS =====
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -51,7 +48,7 @@ div[data-testid="stStatusWidget"], div[data-testid="stToolbar"] {display:none !i
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* Tabla SOLO 3 pechugas */
-.pechugas{overflow:hidden;border-radius:14px} /* redondeo del contenedor */
+.pechugas{overflow:hidden;border-radius:14px}
 .pechugas table{width:100%;border-collapse:separate;border-spacing:0;border:1px solid var(--line);
   border-radius:14px; overflow:hidden;}
 .pechugas th,.pechugas td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:middle;background:var(--panel)}
@@ -80,13 +77,13 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ======= LOGO =======
+# ===== LOGO =====
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ======= CINTA BURSÁTIL (lista extendida) =======
+# ===== CINTA BURSÁTIL =====
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
@@ -101,7 +98,7 @@ COMPANIES = [
 
 @st.cache_data(ttl=75)
 def robust_last(sym: str):
-    """Precio 'last' y delta vs prev, prioriza 1m -> 5m -> diario -> info."""
+    """Precio y delta: 1m -> 5m -> 1d -> fast_info/info."""
     try:
         t = yf.Ticker(sym)
         for itv in ("1m","5m"):
@@ -121,7 +118,6 @@ def robust_last(sym: str):
                 prev = float(c.iloc[-2]) if len(c) >= 2 else None
                 delta = (last - prev) if prev is not None else None
                 return last, delta
-        # fallback a fast_info/info
         fi = t.fast_info
         last = fi.get("last_price", None)
         prev = fi.get("previous_close", None)
@@ -158,7 +154,7 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ======= USD/MXN y Futuros (Yahoo) =======
+# ===== USD/MXN y Futuros (Yahoo) =====
 @st.cache_data(ttl=75)
 def get_fx(): return robust_last("MXN=X")
 fx, fx_chg = get_fx()
@@ -189,7 +185,7 @@ st.markdown(kpi("Res en pie", lc, lc_chg), unsafe_allow_html=True)
 st.markdown(kpi("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ======= USDA — SOLO 3 PECHUGAS =======
+# ===== USDA — SOLO 3 PECHUGAS =====
 POULTRY_URLS=[
  "https://www.ams.usda.gov/mnreports/aj_py018.txt",
  "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -289,7 +285,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ======= Noticias / pie =======
+# ===== Noticias / pie =====
 news=[
   "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada; foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
