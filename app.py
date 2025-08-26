@@ -1,10 +1,10 @@
 # app.py — LaSultana Meat Index (hands-free, sin parpadeo)
-# - Bursátil (yfinance)
+# - Bursátil (yfinance) — TODAS las compañías en la cinta
 # - USD/MXN (Yahoo Finance: MXN=X)
 # - Res/Cerdo (LE=F / HE=F via Yahoo)
-# - Piezas de pollo (USDA AJ_PY018) con snapshot local (sin inventar datos)
+# - Piezas de pollo (USDA AJ_PY018) reducido a 3: Pechuga Jumbo, Pechuga sin Hueso, Pechuga sin piel
 
-import os, json, re, time, random, datetime as dt
+import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
@@ -50,7 +50,7 @@ footer{visibility:hidden;}
 .green{color:var(--up)} .red{color:var(--down)} .muted{color:var(--muted)}
 .unit-inline{font-size:0.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* TABLA POLLO */
+/* TABLA POLLO – solo 3 productos */
 .poultry-table{width:100%}
 .poultry-table table{width:100%;border-collapse:collapse}
 .poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -97,32 +97,33 @@ PRIMARY_COMPANIES = [
 ALTERNATES = [("Conagra Brands","CAG"), ("Sysco","SYY"), ("US Foods","USFD"),
               ("Cranswick","CWK.L"), ("NH Foods","2282.T")]
 
+ALL_COMPANIES = PRIMARY_COMPANIES + ALTERNATES  # ← incluir TODAS
+
 @st.cache_data(ttl=75)
-def fetch_quotes_strict():
-    valid, seen = [], set()
-    def try_add(name, sym):
-        if sym in seen: return
+def fetch_quotes_all():
+    out, seen = [], set()
+    for name, sym in ALL_COMPANIES:
+        if sym in seen: 
+            continue
         try:
             t = yf.Ticker(sym)
             hist = t.history(period="1d", interval="1m")
             if hist is None or hist.empty:
                 hist = t.history(period="1d", interval="5m")
-            if hist is None or hist.empty: return
+            if hist is None or hist.empty:
+                continue
             closes = hist["Close"].dropna()
-            if closes.empty: return
+            if closes.empty:
+                continue
             last, first = float(closes.iloc[-1]), float(closes.iloc[0])
             ch = last - first
-            valid.append({"name":name,"sym":sym,"px":last,"ch":ch})
+            out.append({"name":name,"sym":sym,"px":last,"ch":ch})
             seen.add(sym)
         except Exception:
-            return
-    for n,s in PRIMARY_COMPANIES: try_add(n,s)
-    i=0
-    while len(valid)<14 and i<len(ALTERNATES):
-        try_add(*ALTERNATES[i]); i+=1
-    return valid
+            continue
+    return out
 
-quotes = fetch_quotes_strict()
+quotes = fetch_quotes_all()
 ticker_line = ""
 for q in quotes:
     cls = "green" if q["ch"]>=0 else "red"
@@ -145,7 +146,6 @@ st.markdown(
 def get_fx_yahoo():
     try:
         t = yf.Ticker("MXN=X")  # USD/MXN
-        # 1) fast_info si está disponible
         try:
             fi = t.fast_info
             last = fi.get("last_price", None)
@@ -154,7 +154,6 @@ def get_fx_yahoo():
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-        # 2) info dict
         try:
             inf = t.info or {}
             last = inf.get("regularMarketPrice", None)
@@ -163,7 +162,6 @@ def get_fx_yahoo():
                 return float(last), float(last) - float(prev)
         except Exception:
             pass
-        # 3) fallback: history diario
         d = t.history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
         c = d["Close"].dropna()
@@ -205,44 +203,33 @@ def get_yahoo_last(sym: str):
     except Exception:
         return None, None
 
-# ==================== USDA POULTRY PARTS ====================
+# ==================== USDA POULTRY PARTS (solo 3 pechugas) ====================
 POULTRY_URLS = [
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
     "https://www.ams.usda.gov/mnreports/py018.txt",
     "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
+
+# Tres categorías objetivo
 POULTRY_MAP = {
-    "Breast - B/S":        [r"BREAST\s*-\s*B/?S", r"BREAST,\s*B/?S", r"BREAST\s+B/?S"],
-    "Breast T/S":          [r"BREAST\s*T/?S", r"STRAPLESS"],
-    "Tenderloins":         [r"TENDERLOINS?"],
-    "Wings, Whole":        [r"WINGS?,\s*WHOLE"],
-    "Wings, Drummettes":   [r"DRUMMETTES?"],
-    "Wings, Mid-Joint":    [r"MID[\-\s]?JOINT", r"FLATS?"],
-    "Party Wings":         [r"PARTY\s*WINGS?"],
-    "Leg Quarters":        [r"LEG\s*QUARTERS?"],
-    "Leg Meat - B/S":      [r"LEG\s*MEAT\s*-\s*B/?S"],
-    "Thighs - B/S":        [r"THIGHS?.*B/?S"],
-    "Thighs":              [r"THIGHS?(?!.*B/?S)"],
-    "Drumsticks":          [r"DRUMSTICKS?"],
-    "Whole Legs":          [r"WHOLE\s*LEGS?"],
-    "Whole Broiler/Fryer": [r"WHOLE\s*BROILER/?FRYER", r"WHOLE\s*BROILER\s*-\s*FRYER"],
-}
-LABELS_ES = {
-    "Breast - B/S":"Pechuga sin hueso (B/S)",
-    "Breast T/S":"Pechuga T/S (strapless)",
-    "Tenderloins":"Tender de pechuga",
-    "Wings, Whole":"Ala entera",
-    "Wings, Drummettes":"Muslito de ala (drummette)",
-    "Wings, Mid-Joint":"Media ala (flat)",
-    "Party Wings":"Alitas mixtas (party wings)",
-    "Leg Quarters":"Pierna-muslo (cuarto trasero)",
-    "Leg Meat - B/S":"Carne de pierna B/S",
-    "Thighs - B/S":"Muslo B/S",
-    "Thighs":"Muslo con hueso",
-    "Drumsticks":"Pierna (drumstick)",
-    "Whole Legs":"Pierna entera",
-    "Whole Broiler/Fryer":"Pollo entero (broiler/fryer)",
+    # Pechuga Jumbo: cualquier BREAST con JUMBO
+    "Pechuga Jumbo": [
+        r"BREAST[^\\n]*JUMBO",
+        r"JUMBO[^\\n]*BREAST",
+        r"BREAST\s*-\s*B/?S[^\\n]*JUMBO",
+    ],
+    # Pechuga sin Hueso: BREAST - B/S que NO sea Jumbo
+    "Pechuga sin Hueso": [
+        r"BREAST\s*-\s*B/?S(?![^\\n]*JUMBO)",
+        r"BREAST,\s*B/?S(?![^\\n]*JUMBO)",
+        r"BREAST\s+B/?S(?![^\\n]*JUMBO)",
+    ],
+    # Pechuga sin piel: líneas con SKINLESS explícito
+    "Pechuga sin piel": [
+        r"BREAST[^\\n]*SKINLESS",
+        r"SKINLESS[^\\n]*BREAST",
+    ],
 }
 
 def _extract_avg_from_line(line_upper: str) -> float | None:
@@ -314,10 +301,16 @@ def get_poultry_with_snapshot():
             result[k] = {"price": float(v), "delta": float(dlt)}
         save_snapshot(current)
         if not prev: seeded = True
+        # Asegurar que existan las 3 llaves (si USDA no devolvió alguna)
+        for key in POULTRY_MAP.keys():
+            result.setdefault(key, {"price": None, "delta": 0.0})
         return result, False, seeded
     if prev:
         res = {k: {"price": float((v.get("price") if isinstance(v,dict) else v)), "delta": 0.0}
                for k,v in prev.items() if (v if not isinstance(v,dict) else v.get("price")) is not None}
+        # Completar llaves faltantes
+        for key in POULTRY_MAP.keys():
+            res.setdefault(key, {"price": None, "delta": 0.0})
         return res, True, False
     placeholders = {k: {"price": None, "delta": 0.0} for k in POULTRY_MAP.keys()}
     return placeholders, True, False
@@ -377,16 +370,11 @@ def render_kpi(ph, titulo, price, chg):
     """, unsafe_allow_html=True)
 
 def render_poultry(ph_container, poultry, poultry_stale, poultry_seeded_now):
-    DISPLAY_ORDER = [
-        "Breast - B/S","Breast T/S","Tenderloins","Wings, Whole","Wings, Drummettes",
-        "Wings, Mid-Joint","Party Wings","Leg Quarters","Leg Meat - B/S",
-        "Thighs - B/S","Thighs","Drumsticks","Whole Legs","Whole Broiler/Fryer",
-    ]
+    DISPLAY_ORDER = ["Pechuga Jumbo","Pechuga sin Hueso","Pechuga sin piel"]
     rows = []
     has_val = False
     for k in DISPLAY_ORDER:
-        it = poultry.get(k)
-        if not it: continue
+        it = poultry.get(k, {"price": None, "delta": 0.0})
         price, delta = it["price"], it["delta"]
         if price is not None: has_val = True
         cls = "green" if (delta or 0) >= 0 else "red"
@@ -394,7 +382,7 @@ def render_poultry(ph_container, poultry, poultry_stale, poultry_seeded_now):
         price_txt = f"{fmt2(price)}" if price is not None else "—"
         delta_txt = f"{arrow} {fmt2(abs(delta))}" if price is not None else "—"
         rows.append(
-          f"<tr><td>{LABELS_ES.get(k,k)}</td>"
+          f"<tr><td>{k}</td>"
           f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--poultry'>USD/lb</span></span> "
           f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
         )
@@ -443,7 +431,7 @@ while True:
         live_cattle_px, live_cattle_ch = get_yahoo_last("LE=F")
         lean_hogs_px,   lean_hogs_ch   = get_yahoo_last("HE=F")
 
-        # USDA pollo
+        # USDA pollo (3 categorías)
         poultry, poultry_stale, poultry_seeded_now = get_poultry_with_snapshot()
 
         # Pintar
@@ -458,6 +446,7 @@ while True:
             unsafe_allow_html=True,
         )
     except Exception:
+        # silenciar en producción; en debug: print(e)
         pass
 
     time.sleep(60)
