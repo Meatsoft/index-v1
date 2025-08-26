@@ -1,12 +1,14 @@
-# app.py — LaSultana Meat Index (cinta completa + 3 pechugas)
-# Fuentes:
-# - Yahoo Finance: MXN=X (USD/MXN), LE=F (Res), HE=F (Cerdo), Acciones
-# - USDA AJ_PY018 (solo pechugas) con snapshot (sin inventos)
+# app.py — LaSultana Meat Index (3 pechugas + cinta completa)
 
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
+# Limpia cachés para evitar que veas la tabla vieja
+try:
+    st.cache_data.clear()
+except Exception:
+    pass
 
 # ====================== ESTILOS ======================
 st.markdown("""
@@ -21,38 +23,35 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font-sans)!important}
 .block-container{max-width:1400px;padding-top:12px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
-.grid .card:last-child{margin-bottom:0}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 
 /* LOGO */
-.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:32px 0 28px}
+.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
-/* CINTA SUPERIOR (stocks) */
+/* CINTA (stocks) */
 .tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
 .tape-track{display:flex;width:max-content;will-change:transform;animation:marqueeFast 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
-.muted{color:var(--muted)} .up{color:var(--up)} .down{color:var(--down)}
+.up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marqueeFast{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* GRID */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
-.centerstack .box{margin-bottom:18px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi .left{display:flex;flex-direction:column;gap:6px}
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-inline{font-size:0.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* TABLA (3 pechugas) */
+/* TABLA (SOLO 3 PECHUGAS) */
 .poultry-table table{width:100%;border-collapse:collapse}
 .poultry-table th,.poultry-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .poultry-table th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .poultry-table td:first-child{font-size:110%;}
-.unit-inline--poultry{font-size:0.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
+.unit-inline--poultry{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .poultry-table td:last-child{text-align:right}
 
 /* NOTICIAS */
@@ -79,70 +78,47 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (bursátil) ====================
-# Tu lista completa, normalizada a tickers de Yahoo:
+# ==================== CINTA (toda tu lista) ====================
 COMPANIES = [
-    ("Tyson Foods","TSN"),
-    ("Pilgrim’s Pride","PPC"),
-    ("JBS","JBS"),
-    ("BRF","BRFS"),
-    ("Hormel Foods","HRL"),
-    ("Seaboard","SEB"),
-    ("Minerva","MRVSY"),
-    ("Marfrig","MRRTY"),
-    ("Maple Leaf Foods","MFI.TO"),
-    ("Cal-Maine Foods","CALM"),
-    ("Vital Farms","VITL"),
-    ("Grupo KUO","KUOB.MX"),
-    ("Grupo Bafar","BAFARB.MX"),
-    ("WH Group","WHGLY"),              # sin "(Smithfield)"
-    ("Minupar Participações","MNPR3.SA"),
-    ("Excelsior Alimentos","BAUH4.SA"),
-    ("Wens Foodstuff Group","300498.SZ"),
-    ("Wingstop","WING"),
-    ("Yum! Brands","YUM"),
-    ("Restaurant Brands Intl.","QSR"),
-    ("Sysco","SYY"),
-    ("US Foods","USFD"),
-    ("Performance Food Group","PFGC"),
-    ("Walmart","WMT"),
-    ("Alsea","ALSEA.MX"),
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
+    ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
+    ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
+    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"),
+    ("WH Group","WHGLY"), ("Minupar Participações","MNPR3.SA"),
+    ("Excelsior Alimentos","BAUH4.SA"), ("Wens Foodstuff Group","300498.SZ"),
+    ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
+    ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
+    ("Walmart","WMT"), ("Alsea","ALSEA.MX"),
 ]
 
 @st.cache_data(ttl=75)
 def yahoo_quote(sym: str):
-    """(last, chg) desde Yahoo; chg None si no hay previous_close."""
     try:
         t = yf.Ticker(sym)
-        # fast_info
-        try:
-            fi = t.fast_info
-            last = fi.get("last_price", None)
-            prev = fi.get("previous_close", None)
-            if last is not None:
-                chg = (float(last) - float(prev)) if prev is not None else None
-                return float(last), chg
-        except Exception:
-            pass
-        # info
-        try:
-            inf = t.info or {}
-            last = inf.get("regularMarketPrice", None)
-            prev = inf.get("regularMarketPreviousClose", None)
-            if last is not None:
-                chg = (float(last) - float(prev)) if prev is not None else None
-                return float(last), chg
-        except Exception:
-            pass
-        # history diario
-        d = t.history(period="10d", interval="1d")
+        fi = t.fast_info
+        last = fi.get("last_price", None)
+        prev = fi.get("previous_close", None)
+        if last is not None:
+            chg = (float(last) - float(prev)) if prev is not None else None
+            return float(last), chg
+    except Exception:
+        pass
+    try:
+        inf = yf.Ticker(sym).info or {}
+        last = inf.get("regularMarketPrice", None)
+        prev = inf.get("regularMarketPreviousClose", None)
+        if last is not None:
+            chg = (float(last) - float(prev)) if prev is not None else None
+            return float(last), chg
+    except Exception:
+        pass
+    try:
+        d = yf.Ticker(sym).history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
         c = d["Close"].dropna()
-        if c.shape[0] == 0: return None, None
         last = float(c.iloc[-1])
         prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
-        chg = (last - prev) if prev is not None else None
-        return last, chg
+        return last, (last - prev) if prev is not None else None
     except Exception:
         return None, None
 
@@ -157,24 +133,19 @@ def render_tape():
             if chg is None:
                 items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
             else:
-                cls = "up" if chg >= 0 else "down"
-                arr = "▲" if chg >= 0 else "▼"
-                items.append(
-                    f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>"
-                )
+                cls = "up" if chg >= 0 else "down"; arr = "▲" if chg >= 0 else "▼"
+                items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
     line = "".join(items)
     tape_ph.markdown(f"""
-    <div class='tape'>
-      <div class='tape-track'>
-        <div class='tape-group'>{line}</div>
-        <div class='tape-group' aria-hidden='true'>{line}</div>
-      </div>
-    </div>
+    <div class='tape'><div class='tape-track'>
+      <div class='tape-group'>{line}</div>
+      <div class='tape-group' aria-hidden='true'>{line}</div>
+    </div></div>
     """, unsafe_allow_html=True)
 
 render_tape()
 
-# ==================== FX / FUTUROS (Yahoo) ====================
+# ==================== FX y FUTUROS (Yahoo) ====================
 @st.cache_data(ttl=75)
 def get_fx_yahoo():
     try:
@@ -188,7 +159,7 @@ def get_fx_yahoo():
     except Exception:
         pass
     try:
-        inf = t.info or {}
+        inf = yf.Ticker("MXN=X").info or {}
         last = inf.get("regularMarketPrice", None)
         prev = inf.get("regularMarketPreviousClose", None)
         if last is not None:
@@ -197,7 +168,7 @@ def get_fx_yahoo():
     except Exception:
         pass
     try:
-        d = t.history(period="10d", interval="1d")
+        d = yf.Ticker("MXN=X").history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
         c = d["Close"].dropna(); last = float(c.iloc[-1]); prev = float(c.iloc[-2]) if c.shape[0]>=2 else None
         return last, (last - prev) if prev is not None else None
@@ -207,17 +178,15 @@ def get_fx_yahoo():
 @st.cache_data(ttl=75)
 def get_yahoo_last(sym: str):
     try:
-        t = yf.Ticker(sym)
-        fi = t.fast_info
-        last = fi.get("last_price", None)
-        prev = fi.get("previous_close", None)
+        t = yf.Ticker(sym); fi = t.fast_info
+        last = fi.get("last_price", None); prev = fi.get("previous_close", None)
         if last is not None:
             chg = (float(last) - float(prev)) if prev is not None else None
             return float(last), chg
     except Exception:
         pass
     try:
-        inf = t.info or {}
+        inf = yf.Ticker(sym).info or {}
         last = inf.get("regularMarketPrice", None)
         prev = inf.get("regularMarketPreviousClose", None)
         if last is not None:
@@ -226,7 +195,7 @@ def get_yahoo_last(sym: str):
     except Exception:
         pass
     try:
-        d = t.history(period="10d", interval="1d")
+        d = yf.Ticker(sym).history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
         c = d["Close"].dropna(); last = float(c.iloc[-1]); prev = float(c.iloc[-2]) if c.shape[0]>=2 else None
         return last, (last - prev) if prev is not None else None
@@ -244,20 +213,20 @@ HEADERS = {"User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/5
 
 PECHUGAS_MAP = {
     "Pechuga B/S Jumbo":   [r"BREAST.*B/?S.*JUMBO", r"JUMBO.*BREAST.*B/?S"],
-    "Pechuga B/S":         [r"BREAST\\s*-\\s*B/?S(?!.*JUMBO)", r"BREAST,\\s*B/?S(?!.*JUMBO)"],
-    "Pechuga T/S (strapless)": [r"BREAST\\s*T/?S", r"STRAPLESS"],
+    "Pechuga B/S":         [r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
+    "Pechuga T/S (strapless)": [r"BREAST\s*T/?S", r"STRAPLESS"],
 }
 
 def _avg_from_line(U: str):
-    m = re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)", U)
+    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
     if m:
         try: return float(m.group(1))
         except: pass
-    m2 = re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)", U)
+    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", U)
     if m2:
         try: return (float(m2.group(1)) + float(m2.group(2)))/2.0
         except: pass
-    nums = re.findall(r"(\\d+(?:\\.\\d+)?)", U)
+    nums = re.findall(r"(\d+(?:\.\d+)?)", U)
     if nums:
         try: return float(nums[-1])
         except: return None
@@ -269,8 +238,7 @@ def fetch_usda_pechugas()->dict:
         try:
             r = requests.get(url, timeout=12, headers=HEADERS)
             if r.status_code != 200: continue
-            txt = r.text
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
+            lines = [ln.strip() for ln in r.text.splitlines() if ln.strip()]
             found = {}
             for disp, pats in PECHUGAS_MAP.items():
                 for ln in lines:
@@ -280,8 +248,7 @@ def fetch_usda_pechugas()->dict:
                         if val is not None:
                             found[disp] = val
                             break
-            if found:
-                return found
+            if found: return found
         except Exception:
             continue
     return {}
@@ -313,132 +280,76 @@ def get_pechugas_with_snapshot():
         return res, False, seeded
     if prev:
         return {k:{"price": float((v.get("price") if isinstance(v,dict) else v)), "delta":0.0} for k,v in prev.items()}, True, False
-    # primera vida
     base = {k:{"price":None,"delta":0.0} for k in PECHUGAS_MAP.keys()}
     return base, True, False
 
-# ==================== UI ESTÁTICA ====================
-st.markdown("<div class='grid'>", unsafe_allow_html=True)
-fx_ph     = st.empty()
-res_ph    = st.empty()
-cerdo_ph  = st.empty()
-st.markdown("</div>", unsafe_allow_html=True)
-
-pollo_ph  = st.container()
-news_ph   = st.empty()
-footer_ph = st.empty()
-
-def render_fx(ph, fx, chg):
-    if fx is None:
-        rate_html = "<div class='big'>N/D</div>"; delta_html = ""
-    else:
-        if chg is None:
-            rate_html = f"<div class='big'>{fmt4(fx)}</div>"; delta_html = ""
-        else:
-            cls = "up" if chg >= 0 else "down"; arr = "▲" if chg >= 0 else "▼"
-            rate_html = f"<div class='big {cls}'>{fmt4(fx)}</div>"
-            delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    ph.markdown(f"""
-    <div class="card"><div class="kpi"><div class="left">
-      <div class="title">USD/MXN</div>
-      {rate_html}
-      {delta_html}
-    </div></div></div>
-    """, unsafe_allow_html=True)
-
-def render_kpi(ph, titulo, price, chg):
+# ==================== RENDER ====================
+def render_kpi(title, price, chg):
     unit = "USD/100 lb"
     if price is None:
-        price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta_html = ""
+        price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta_html=""
     else:
         if chg is None:
-            price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"; delta_html = ""
+            price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"; delta_html=""
         else:
-            cls = "up" if chg >= 0 else "down"; arr = "▲" if chg >= 0 else "▼"
+            cls = "up" if chg>=0 else "down"; arr = "▲" if chg>=0 else "▼"
             price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
             delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    ph.markdown(f"""
-    <div class="card box"><div class="kpi">
-      <div class="left"><div class="title">{titulo}</div>{price_html}</div>
-      {delta_html}
-    </div></div>
-    """, unsafe_allow_html=True)
+    return f"""<div class="card"><div class="kpi"><div>
+        <div class="title">{title}</div>{price_html}</div>{delta_html}
+    </div></div>"""
 
-def render_pechugas(ph_container, data, stale, seeded):
-    order = ["Pechuga B/S Jumbo", "Pechuga B/S", "Pechuga T/S (strapless)"]
-    rows = []; any_val=False
-    for name in order:
-        it = data.get(name, {"price":None,"delta":0.0})
-        price, delta = it["price"], it["delta"]
-        if price is not None: any_val=True
-        cls = "up" if (delta or 0)>=0 else "down"; arr = "▲" if (delta or 0)>=0 else "▼"
-        price_txt = fmt2(price) if price is not None else "—"
-        delta_txt = (f"{arr} {fmt2(abs(delta))}" if price is not None else "—")
-        rows.append(
-            f"<tr><td>{name}</td>"
-            f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--poultry'>USD/lb</span></span> "
-            f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
-        )
-    badge = ""
-    if stale and any_val: badge = " <span class='badge'>último disponible</span>"
-    elif seeded:          badge = " <span class='badge'>actualizado</span>"
-    ph_container.markdown(f"""
-    <div class="card poultry-table">
-      <div class="title" style="color:var(--txt);margin-bottom:6px">
-        Piezas de Pollo, Precios U.S. National (USDA){badge}
-      </div>
-      <table>
-        <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
-        <tbody>{''.join(rows)}</tbody>
-      </table>
-    </div>
-    """, unsafe_allow_html=True)
+fx, fx_chg = get_fx_yahoo()
+lc, lc_chg = get_yahoo_last("LE=F")
+lh, lh_chg = get_yahoo_last("HE=F")
 
-def render_news(ph):
-    noticias = [
-      "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
-      "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
-      "Poultry: oferta amplia presiona piezas oscuras; pechuga B/S estable en contratos.",
-      "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
-    ]
-    k = int(time.time()//30) % len(noticias)
-    text = noticias[k]
-    ph.markdown(f"""
-    <div class='tape-news'><div class='tape-news-track'>
-      <div class='tape-news-group'><span class='item'>{text}</span></div>
-      <div class='tape-news-group' aria-hidden='true'><span class='item'>{text}</span></div>
-    </div></div>
-    """, unsafe_allow_html=True)
+st.markdown("<div class='grid'>", unsafe_allow_html=True)
+st.markdown(
+    f"""<div>{render_kpi("USD/MXN", fx, fx_chg)}</div>
+        <div>{render_kpi("Res en pie", lc, lc_chg)}</div>
+        <div>{render_kpi("Cerdo en pie", lh, lh_chg)}</div>""",
+    unsafe_allow_html=True
+)
+st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== LOOP SIN PARPADEO ====================
-last_tape_update = 0
-while True:
-    try:
-        # FX y Futuros
-        fx, fx_chg = get_fx_yahoo()
-        lc, lc_chg = get_yahoo_last("LE=F")
-        lh, lh_chg = get_yahoo_last("HE=F")
+# Tabla SOLO de 3 pechugas
+pechugas, stale, seeded = get_pechugas_with_snapshot()
+order = ["Pechuga B/S Jumbo","Pechuga B/S","Pechuga T/S (strapless)"]
+rows = []
+for name in order:
+    it = pechugas.get(name, {"price":None,"delta":0.0})
+    price, delta = it["price"], it["delta"]
+    cls = "up" if (delta or 0)>=0 else "down"; arr = "▲" if (delta or 0)>=0 else "▼"
+    price_txt = fmt2(price) if price is not None else "—"
+    delta_txt = f"{arr} {fmt2(abs(delta))}" if price is not None else "—"
+    rows.append(
+        f"<tr><td>{name}</td>"
+        f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--poultry'>USD/lb</span></span> "
+        f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
+    )
+badge = " <span class='badge'>último disponible</span>" if stale else (" <span class='badge'>actualizado</span>" if seeded else "")
+st.markdown(f"""
+<div class="card poultry-table">
+  <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo, Precios U.S. National (USDA){badge}</div>
+  <table><thead><tr><th>Producto</th><th>Precio</th></tr></thead><tbody>{''.join(rows)}</tbody></table>
+</div>
+""", unsafe_allow_html=True)
 
-        # Pechugas (3)
-        pechugas, stale, seeded = get_pechugas_with_snapshot()
-
-        # Pintar
-        render_fx(fx_ph, fx, fx_chg)
-        render_kpi(res_ph,   "Res en pie",   lc, lc_chg)
-        render_kpi(cerdo_ph, "Cerdo en pie", lh, lh_chg)
-        render_pechugas(pollo_ph, pechugas, stale, seeded)
-        render_news(news_ph)
-
-        # Cinta: refrescar cada 5 minutos sin tocar el resto
-        now = time.time()
-        if now - last_tape_update > 300:
-            render_tape()
-            last_tape_update = now
-
-        footer_ph.markdown(
-            f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
-            unsafe_allow_html=True,
-        )
-    except Exception:
-        pass
-    time.sleep(60)
+# Noticias y pie
+noticias = [
+  "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
+  "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
+  "Pechuga B/S estable en contratos; oferta amplia presiona piezas oscuras.",
+  "FX: peso fuerte abarata importaciones; revisar spread USD/lb→MXN/kg y logística."
+]
+k = int(time.time()//30)%len(noticias)
+st.markdown(f"""
+<div class='tape-news'><div class='tape-news-track'>
+  <div class='tape-news-group'><span class='item'>{noticias[k]}</span></div>
+  <div class='tape-news-group' aria-hidden='true'><span class='item'>{noticias[k]}</span></div>
+</div></div>
+""", unsafe_allow_html=True)
+st.markdown(
+  f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+  unsafe_allow_html=True
+)
