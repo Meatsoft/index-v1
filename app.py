@@ -1,11 +1,11 @@
-# app.py — LaSultana Meat Index (fix unidad FX)
+# app.py — LaSultana Meat Index (BS & T/S sólidas + bordes visibles)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# Oculta spinner/toolbar
+# Oculta spinner/toolbar y parpadeo
 st.markdown("""
 <style>
 [data-testid="stStatusWidget"], [data-testid="stToolbar"]{display:none !important}
@@ -16,7 +16,7 @@ mo.observe(document.body,{subtree:true,childList:true});
 </script>
 """, unsafe_allow_html=True)
 
-# ============== ESTILOS (idénticos) ==============
+# ============== ESTILOS ==============
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -57,14 +57,15 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
 .pechugas td:first-child{font-size:110%}
 .pechugas td:last-child{text-align:right}
-.pechugas tbody tr:last-child td{border-bottom:none}
+/* Importante: mantener borde inferior del último renglón */
+.pechugas tbody tr:last-child td{border-bottom:1px solid var(--line)}
 .price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
 .price-delta{font-size:20px;margin-left:10px}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Noticias */
+/* Noticias (ligeramente más rápida que la anterior) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 117s linear infinite}
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 104s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
@@ -73,11 +74,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 """, unsafe_allow_html=True)
 
 def fmt2(x: float) -> str:
-    s = f"{x:,.2f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.2f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 def fmt4(x: float) -> str:
-    s = f"{x:,.4f}"
-    return s.replace(",", "X").replace(".", ",").replace("X", ".")
+    s = f"{x:,.4f}"; return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 # ============== LOGO ==============
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -178,9 +177,8 @@ fx,fx_chg = q("MXN=X")
 lc,lc_chg = q("LE=F")
 lh,lh_chg = q("HE=F")
 
-# >>> FIX: KPI ahora acepta unidad y formato por tarjeta <<<
 def kpi(title, price, chg, unit:str|None=None, fmt=fmt2):
-    unit_html = f" <span class='unit-inline'>{unit}</span>" if (unit) else ""
+    unit_html = f" <span class='unit-inline'>{unit}</span>" if unit else ""
     if price is None:
         price_html=f"<div class='big'>N/D{unit_html}</div>"; delta_html=""
     else:
@@ -195,14 +193,12 @@ def kpi(title, price, chg, unit:str|None=None, fmt=fmt2):
     </div></div>"""
 
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
-# FX: sin unidad + 4 decimales
 st.markdown(kpi("USD/MXN", fx, fx_chg, unit=None, fmt=fmt4), unsafe_allow_html=True)
-# Futuros: con unidad USD/100 lb
 st.markdown(kpi("Res en pie", lc, lc_chg, unit="USD/100 lb"), unsafe_allow_html=True)
 st.markdown(kpi("Cerdo en pie", lh, lh_chg, unit="USD/100 lb"), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ============== USDA — Pechuga B/S y T/S ==============
+# ============== USDA — Pechuga B/S y T/S (parser reforzado) ==============
 POULTRY_URLS=[
  "https://www.ams.usda.gov/mnreports/aj_py018.txt",
  "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -210,22 +206,25 @@ POULTRY_URLS=[
  "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
 HDR={"User-Agent":"Mozilla/5.0"}
+
+# Patrones más flexibles (evita JUMBO para B/S)
 PECHUGAS_PAT={
- "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
- "Pechuga T/S (strapless)":[r"BREAST\s*T/?S", r"STRAPLESS"],
+ "Pechuga B/S":[r"BREAST[^A-Z0-9]{0,15}B/?S(?![^\\n]*JUMBO)"],
+ "Pechuga T/S (strapless)":[r"BREAST[^A-Z0-9]{0,20}(?:T/?S|STRAPLESS)"],
 }
-def _avg(U:str):
-    m=re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)",U)
+
+def _extract_wavg_from_block(block_upper:str)->float|None:
+    m=re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)", block_upper)
     if m:
-        try:return float(m.group(1))
-        except: pass
-    m2=re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",U)
+        try: return float(m.group(1))
+        except: return None
+    m2=re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)", block_upper)
     if m2:
         try: return (float(m2.group(1))+float(m2.group(2)))/2.0
-        except: pass
-    nums=re.findall(r"(\d+(?:\.\d+)?)",U)
+        except: return None
+    nums=re.findall(r"(\\d+(?:\\.\\d+)?)", block_upper)
     if nums:
-        try:return float(nums[-1])
+        try: return float(nums[-1])
         except: return None
     return None
 
@@ -233,19 +232,38 @@ def _avg(U:str):
 def fetch_pechugas()->dict:
     for url in POULTRY_URLS:
         try:
-            r=requests.get(url,timeout=12,headers=HDR)
+            r=requests.get(url,timeout=12,headers=HDR,allow_redirects=True)
             if r.status_code!=200: continue
-            lines=[ln.strip() for ln in r.text.splitlines() if ln.strip()]
+            txt=r.text
+            # Si USDA responde HTML (proxy/redirect), intenta siguiente URL
+            if "<html" in txt.lower(): 
+                continue
+            lines=[ln.rstrip() for ln in txt.splitlines() if ln.strip()]
+            joined=" ".join(lines).upper()
+
             out={}
-            for disp,pats in PECHUGAS_PAT.items():
-                for ln in lines:
-                    U=ln.upper()
-                    if any(re.search(p,U) for p in pats):
-                        v=_avg(U)
-                        if v is not None:
-                            out[disp]=v; break
-            if out: return out
-        except: continue
+            # Búsqueda por bloque (parte + weighted avg en la misma línea o cerca)
+            for disp, pats in PECHUGAS_PAT.items():
+                val=None
+                for pat in pats:
+                    m=re.search(pat+r".{0,200}?(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)", joined, re.S)
+                    if m:
+                        try: val=float(m.group(1)); break
+                        except: pass
+                if val is None:
+                    # Fallback línea-a-línea (por si el reporte viene “estrecho”)
+                    for ln in lines:
+                        U=ln.upper()
+                        if any(re.search(p,U) for p in pats):
+                            val=_extract_wavg_from_block(U)
+                            if val is not None:
+                                break
+                if val is not None:
+                    out[disp]=val
+            if out:
+                return out
+        except Exception:
+            continue
     return {}
 
 SNAP="poultry_last_pechugas.json"
