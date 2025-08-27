@@ -1,11 +1,11 @@
-# app.py — LaSultana Meat Index (BS + TS; cinta USD limpia)
+# app.py — LaSultana Meat Index (fix unidad FX)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 import pandas as pd
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# Oculta spinner/toolbar para que no “parpadee”
+# Oculta spinner/toolbar
 st.markdown("""
 <style>
 [data-testid="stStatusWidget"], [data-testid="stToolbar"]{display:none !important}
@@ -16,7 +16,7 @@ mo.observe(document.body,{subtree:true,childList:true});
 </script>
 """, unsafe_allow_html=True)
 
-# ================= ESTILOS =================
+# ============== ESTILOS (idénticos) ==============
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -49,7 +49,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Tabla PECHUGAS (2 ítems) — redondeo perfecto */
+/* Tabla PECHUGAS */
 .pechugas{border-radius:10px}
 .pechugas .tbl{border-radius:10px; overflow:hidden; background:transparent;}
 .pechugas table{width:100%;border-collapse:separate;border-spacing:0}
@@ -62,7 +62,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .price-delta{font-size:20px;margin-left:10px}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Noticias (22% más rápida: 150s → 117s) */
+/* Noticias */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 117s linear infinite}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
@@ -79,13 +79,13 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ================= LOGO =================
+# ============== LOGO ==============
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ================= CINTA (solo USD + recientes) =================
+# ============== CINTA (USD limpias) ==============
 COMPANIES_USD = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"),
     ("BRF","BRFS"), ("Hormel Foods","HRL"), ("Seaboard","SEB"),
@@ -94,20 +94,19 @@ COMPANIES_USD = [
     ("Restaurant Brands Intl.","QSR"), ("Sysco","SYY"), ("US Foods","USFD"),
     ("Performance Food Group","PFGC"), ("Walmart","WMT"),
 ]
-RECENCY_DAYS = 30  # exige que el último cierre sea <= 30 días
+RECENCY_DAYS = 30
 
 @st.cache_data(ttl=90)
 def yahoo_meta_and_price(sym:str):
     try:
         t = yf.Ticker(sym)
-        # Moneda
         curr = None
         try: curr = t.fast_info.get("currency")
         except: pass
         if not curr:
             try: curr = (t.info or {}).get("currency")
             except: pass
-        # Precio
+
         last, delta = None, None
         try:
             fi = t.fast_info
@@ -124,7 +123,7 @@ def yahoo_meta_and_price(sym:str):
                 if last is not None and prev is not None:
                     last = float(last); delta = float(last) - float(prev)
             except: pass
-        # Recencia
+
         last_ts = None
         try:
             hist = t.history(period="2mo", interval="1d")
@@ -168,7 +167,7 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ================= FX & FUTUROS (Yahoo) =================
+# ============== FX & FUTUROS (Yahoo) ==============
 @st.cache_data(ttl=75)
 def q(sym:str):
     meta = yahoo_meta_and_price(sym)
@@ -176,31 +175,34 @@ def q(sym:str):
     return meta["last"], meta["delta"]
 
 fx,fx_chg = q("MXN=X")
-lc,lc_chg = q("LE=F")    # Live Cattle
-lh,lh_chg = q("HE=F")    # Lean Hogs
+lc,lc_chg = q("LE=F")
+lh,lh_chg = q("HE=F")
 
-def kpi(title, price, chg):
-    unit="USD/100 lb"
+# >>> FIX: KPI ahora acepta unidad y formato por tarjeta <<<
+def kpi(title, price, chg, unit:str|None=None, fmt=fmt2):
+    unit_html = f" <span class='unit-inline'>{unit}</span>" if (unit) else ""
     if price is None:
-        price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta_html=""
+        price_html=f"<div class='big'>N/D{unit_html}</div>"; delta_html=""
     else:
+        price_html=f"<div class='big'>{fmt(price)}{unit_html}</div>"
         if chg is None:
-            price_html=f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"; delta_html=""
+            delta_html=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            price_html=f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
             delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"""<div class="card"><div class="kpi">
       <div><div class="title">{title}</div>{price_html}</div>{delta_html}
     </div></div>"""
 
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
-st.markdown(kpi("USD/MXN", fx, fx_chg), unsafe_allow_html=True)
-st.markdown(kpi("Res en pie", lc, lc_chg), unsafe_allow_html=True)
-st.markdown(kpi("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
+# FX: sin unidad + 4 decimales
+st.markdown(kpi("USD/MXN", fx, fx_chg, unit=None, fmt=fmt4), unsafe_allow_html=True)
+# Futuros: con unidad USD/100 lb
+st.markdown(kpi("Res en pie", lc, lc_chg, unit="USD/100 lb"), unsafe_allow_html=True)
+st.markdown(kpi("Cerdo en pie", lh, lh_chg, unit="USD/100 lb"), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ================= USDA — PECHUGA B/S y T/S =================
+# ============== USDA — Pechuga B/S y T/S ==============
 POULTRY_URLS=[
  "https://www.ams.usda.gov/mnreports/aj_py018.txt",
  "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
@@ -209,19 +211,19 @@ POULTRY_URLS=[
 ]
 HDR={"User-Agent":"Mozilla/5.0"}
 PECHUGAS_PAT={
- "Pechuga B/S":[r"BREAST\\s*-\\s*B/?S(?!.*JUMBO)", r"BREAST,\\s*B/?S(?!.*JUMBO)"],
- "Pechuga T/S (strapless)":[r"BREAST\\s*T/?S", r"STRAPLESS"],
+ "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
+ "Pechuga T/S (strapless)":[r"BREAST\s*T/?S", r"STRAPLESS"],
 }
 def _avg(U:str):
-    m=re.search(r"(?:WT?D|WEIGHTED)\\s*AVG\\.?\\s*(\\d+(?:\\.\\d+)?)",U)
+    m=re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)",U)
     if m:
         try:return float(m.group(1))
         except: pass
-    m2=re.search(r"(\\d+(?:\\.\\d+)?)\\s*-\\s*(\\d+(?:\\.\\d+)?)",U)
+    m2=re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",U)
     if m2:
         try: return (float(m2.group(1))+float(m2.group(2)))/2.0
         except: pass
-    nums=re.findall(r"(\\d+(?:\\.\\d+)?)",U)
+    nums=re.findall(r"(\d+(?:\.\d+)?)",U)
     if nums:
         try:return float(nums[-1])
         except: return None
@@ -302,7 +304,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ================= Noticias + pie =================
+# ============== Noticias + pie ==============
 news=[
   "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
@@ -320,7 +322,7 @@ st.markdown(
   unsafe_allow_html=True
 )
 
-# ================= Refresh suave =================
+# ============== Refresh suave ==============
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=60_000, key='auto-refresh')
