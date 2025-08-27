@@ -1,9 +1,8 @@
-# app.py — LaSultana Meat Index (pechugas como KPIs)
+# app.py — LaSultana Meat Index (KPIs 25% más delgadas)
 import os, json, re, datetime as dt
 from datetime import timedelta
 import requests, streamlit as st, yfinance as yf
 
-# ======= Config =======
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 try:
     if st.runtime.scriptrunner.get_script_run_ctx().session_id is None:
@@ -11,14 +10,14 @@ try:
 except Exception:
     pass
 
-# ======= Autorefresh suave (sin parpadeo) =======
+# Autorefresh suave (sin parpadeo)
 try:
     from streamlit_autorefresh import st_autorefresh
     st_autorefresh(interval=60_000, key="meatidx_refresh")
 except Exception:
     pass
 
-# ======= Estilos =======
+# ======= ESTILOS (KPIs más delgadas) =======
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
@@ -29,39 +28,47 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
+
+/* Cards + slimming */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+      padding:10px; /* antes 14px */
+      margin-bottom:16px}
+
+/* Ocultar barras de estado/carga */
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 div[data-testid="stStatusWidget"], div[role="progressbar"]{display:none!important}
 
 /* Logo */
-.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
+.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 20px}
 
 /* Cinta bursátil */
-.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
+.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:16px}
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
-/* KPIs */
-.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
-.grid-parts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
-.kpi .delta{font-size:20px;margin-left:12px}
-.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+/* Grids */
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:10px}
+.grid-parts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
-/* Noticias (22% más rápido) */
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
+/* KPIs — 25% más delgadas (tamaños reducidos) */
+.kpi{display:flex;justify-content:space-between;align-items:flex-start}
+.kpi .title{font-size:14px; /* antes 18px */ color:var(--muted)}
+.kpi .big{font-size:36px; /* antes 48px */ font-weight:900;letter-spacing:.2px;line-height:1.05}
+.kpi .delta{font-size:15px; /* antes 20px */ margin-left:12px}
+.unit-inline{font-size:.65em; /* antes .7em */ color:var(--muted);font-weight:600;letter-spacing:.3px}
+
+/* Noticias (22% más rápido ya aplicado previamente) */
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:50px;margin:0 0 16px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 117s linear infinite;will-change:transform}
-.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
+.tape-news-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:20px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 .caption{color:var(--muted)!important}
 .badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;margin-left:8px}
-.section-h{margin:4px 4px 10px;color:var(--muted);font-size:14px}
+.section-h{margin:2px 4px 8px;color:var(--muted);font-size:13px}
 </style>
 """, unsafe_allow_html=True)
 
@@ -78,7 +85,7 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ======= Cinta bursátil (USD y confiables) =======
+# ======= Cinta bursátil (tickers USD y confiables) =======
 COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"),
@@ -88,7 +95,6 @@ COMPANIES = [
     ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
     ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
     ("Walmart","WMT"),
-    # Se removieron tickers MXN/inactivos (BAFARB.MX, ALSEA.MX)
 ]
 
 @st.cache_data(ttl=75)
@@ -134,7 +140,7 @@ st.markdown(f"""
   <div class='tape-group' aria-hidden='true'>{line}</div>
 </div></div>""", unsafe_allow_html=True)
 
-# ======= FX (Yahoo) + Futuros (Yahoo) =======
+# ======= FX y futuros (Yahoo) =======
 @st.cache_data(ttl=75)
 def get_fx():   return q("MXN=X")
 @st.cache_data(ttl=75)
@@ -188,7 +194,7 @@ def kpi_parts(title, price, chg):
       <div><div class="title">{title}</div>{price_html}</div>{delta_html}
     </div></div>"""
 
-# ======= Primera fila de KPIs =======
+# ======= Primera fila =======
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 st.markdown(kpi_fx("USD/MXN", fx, fx_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Res en pie", lc, lc_chg), unsafe_allow_html=True)
@@ -204,12 +210,8 @@ POULTRY_URLS = [
 ]
 HDR = {"User-Agent":"Mozilla/5.0"}
 PECH_PAT = {
-    "Pechuga B/S":[
-        r"BREAST\s*[-,]\s*B/?S\b", r"BONELESS\s*SKINLESS\s*BREASTS?", r"BREASTS?\s*\(B/?S\)"
-    ],
-    "Pechuga T/S (strapless)":[
-        r"BREAST\s*T/?S\b", r"STRAPLESS\s*BREASTS?"
-    ],
+    "Pechuga B/S":[r"BREAST\s*[-,]\s*B/?S\b", r"BONELESS\s*SKINLESS\s*BREASTS?", r"BREASTS?\s*\(B/?S\)"],
+    "Pechuga T/S (strapless)":[r"BREAST\s*T/?S\b", r"STRAPLESS\s*BREASTS?"],
 }
 
 def _avg(line_up:str):
@@ -246,7 +248,6 @@ def parse_pech(text:str) -> dict:
 
 @st.cache_data(ttl=1800)
 def fetch_usda_latest(days_back:int=7) -> dict:
-    # 1) sin fecha (último disponible)
     for url in POULTRY_URLS:
         try:
             r = requests.get(url, timeout=12, headers=HDR)
@@ -254,7 +255,6 @@ def fetch_usda_latest(days_back:int=7) -> dict:
                 out = parse_pech(r.text)
                 if out: return out
         except: pass
-    # 2) fechas hacia atrás
     today = dt.date.today()
     for d in range(days_back):
         date = (today - timedelta(days=d)).isoformat()
@@ -302,17 +302,15 @@ pech, stale, seeded = pechugas_with_snapshot()
 bs   = pech.get("Pechuga B/S", {"price":None,"delta":0.0})
 ts   = pech.get("Pechuga T/S (strapless)", {"price":None,"delta":0.0})
 
-# Título de sección y badges
 badge = " <span class='badge'>último disponible</span>" if stale else (" <span class='badge'>actualizado</span>" if seeded else "")
 st.markdown(f"<div class='section-h'>Piezas de Pollo — U.S. National (USDA){badge}</div>", unsafe_allow_html=True)
 
-# Tarjetas KPI de pechugas
 st.markdown("<div class='grid-parts'>", unsafe_allow_html=True)
 st.markdown(kpi_parts("Pechuga B/S", bs["price"], bs["delta"]), unsafe_allow_html=True)
 st.markdown(kpi_parts("Pechuga T/S (strapless)", ts["price"], ts["delta"]), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ======= Noticias =======
+# Noticias
 news=[
   "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
@@ -327,7 +325,6 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ======= Pie =======
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True,
