@@ -15,8 +15,8 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-header[data-testid="stHeader"]{display:none;} 
-#MainMenu{visibility:hidden;} 
+header[data-testid="stHeader"]{display:none;}
+#MainMenu{visibility:hidden;}
 footer{visibility:hidden;}
 /* Oculta el widget de estado para minimizar parpadeo visual del auto-rerun */
 div[data-testid="stStatusWidget"]{display:none!important}
@@ -43,7 +43,7 @@ div[data-testid="stStatusWidget"]{display:none!important}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
-/* Cinta de noticias (inferior) — ~29% más rápida (150s / 1.29 ≈ 116s) + 5% extra ≈ 110s */
+/* Cinta de noticias (inferior) — ~29% más rápida ≈ 110s + 5% extra ya aplicado */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 14px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 110s linear infinite;will-change:transform}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
@@ -62,6 +62,9 @@ div[data-testid="stStatusWidget"]{display:none!important}
   vertical-align:middle;
   margin-left:8px;
 }
+
+/* Micro-padding (abajo) para el encabezado de Piezas de Pollo */
+.section-title{font-size:20px;color:var(--txt);margin:0 0 6px 0}  /* << tantitito padding abajo */
 </style>
 """, unsafe_allow_html=True)
 
@@ -84,12 +87,12 @@ RAW_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
     ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"),  # se filtrarán por divisa
+    ("Grupo KUO","KUOB.MX"), ("Grupo Bafar","BAFARB.MX"),
     ("WH Group","WHGLY"), ("Minupar Participações","MNPR3.SA"),
     ("Excelsior Alimentos","BAUH4.SA"), ("Wens Foodstuff Group","300498.SZ"),
     ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
     ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
-    ("Walmart","WMT"), # ("Alsea","ALSEA.MX")  <-- no USD, removida
+    ("Walmart","WMT"),
 ]
 
 @st.cache_data(ttl=75)
@@ -237,8 +240,8 @@ def kpi_card(title: str, price, chg, unit: str|None):
     """
 
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
-st.markdown(kpi_card("USD/MXN",   fx, fx_chg, None),          unsafe_allow_html=True)
-st.markdown(kpi_card("Res en pie", lc, lc_chg, "USD/100 lb"), unsafe_allow_html=True)
+st.markdown(kpi_card("USD/MXN",   fx, fx_chg, None),            unsafe_allow_html=True)
+st.markdown(kpi_card("Res en pie", lc, lc_chg, "USD/100 lb"),   unsafe_allow_html=True)
 st.markdown(kpi_card("Cerdo en pie", lh, lh_chg, "USD/100 lb"), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
@@ -275,7 +278,7 @@ def fetch_pechugas()->dict:
     for url in POULTRY_URLS:
         try:
             r = requests.get(url, timeout=12, headers=HDR)
-            if r.status_code != 200: 
+            if r.status_code != 200:
                 continue
             if "<html" in r.text.lower():
                 continue
@@ -348,7 +351,7 @@ def kpi_pechuga(nombre: str, info: dict) -> str:
     </div></div>"""
 
 badge = " <span class='badge'>último disponible</span>" if stale else (" <span class='badge'>actualizado</span>" if seeded else "")
-st.markdown(f"<div class='kpi'><div class='title' style='font-size:20px;color:var(--txt)'>Piezas de Pollo — U.S. National (USDA){badge}</div></div>", unsafe_allow_html=True)
+st.markdown(f"<div class='section-title'>Piezas de Pollo — U.S. National (USDA){badge}</div>", unsafe_allow_html=True)
 
 colA, colB = st.columns(2)
 with colA:
