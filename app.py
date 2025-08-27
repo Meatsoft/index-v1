@@ -1,10 +1,10 @@
-# app.py — LaSultana Meat Index (fix pollo: usa último snapshot aunque cambien etiquetas)
+# app.py — LaSultana Meat Index (fix snapshot legado + TTL)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# ========= ESTILOS (idénticos a la versión anterior) =========
+# ====== ESTILOS (igual UI) ======
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap');
@@ -15,12 +15,10 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-header[data-testid="stHeader"]{display:none;}
-#MainMenu{visibility:hidden;}
-footer{visibility:hidden;}
+header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
 div[data-testid="stStatusWidget"]{display:none!important}
 
-/* Tarjetas / KPIs delgados (25%) */
+/* Tarjetas/ KPIs más delgadas */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:14px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:14px;color:var(--muted)}
@@ -42,23 +40,23 @@ div[data-testid="stStatusWidget"]{display:none!important}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
-/* Cinta de noticias (más rápida) */
+/* Cinta de noticias (un poco más rápida) */
 .tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 14px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 110s linear infinite;will-change:transform}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
 
-/* Badge con 60% menos padding vertical */
+/* Badge con 60% menos padding vertical y un pelín de margen abajo */
 .badge{display:inline-block;padding:1px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);
-       font-size:12px;line-height:1.1;vertical-align:middle;margin-left:8px}
+       font-size:12px;line-height:1.1;vertical-align:middle;margin-left:8px;margin-bottom:2px}
 
-/* Título de Piezas (micro-padding abajo) */
-.section-title{font-size:20px;color:var(--txt);margin:0 0 6px 0}
+/* Título Piezas (con “tantitito” padding abajo) */
+.section-title{font-size:20px;color:var(--txt);margin:0 0 8px 0}
 </style>
 """, unsafe_allow_html=True)
 
-# ========= HELPERS =========
+# ====== HELPERS ======
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -66,13 +64,13 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ========= LOGO =========
+# ====== LOGO ======
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ========= CINTA BURSÁTIL (filtra USD) =========
+# ====== CINTA BURSÁTIL (USD only) ======
 RAW_COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
@@ -95,19 +93,19 @@ def quote_usd_only(name: str, sym: str):
         if not cur:
             try: cur = (t.info or {}).get("currency", None)
             except: pass
-        if cur != "USD":
+        if cur != "USD":  # filtramos no-USD
             return None
         last, chg = None, None
         try:
             fi = t.fast_info or {}
-            lp = fi.get("last_price", None); pc = fi.get("previous_close", None)
+            lp = fi.get("last_price"); pc = fi.get("previous_close")
             if lp is not None:
                 last = float(lp); chg = (last - float(pc)) if pc is not None else None
         except: pass
         if last is None:
             try:
                 inf = t.info or {}
-                lp = inf.get("regularMarketPrice", None); pc = inf.get("regularMarketPreviousClose", None)
+                lp = inf.get("regularMarketPrice"); pc = inf.get("regularMarketPreviousClose")
                 if lp is not None:
                     last = float(lp); chg = (last - float(pc)) if pc is not None else None
             except: pass
@@ -119,8 +117,8 @@ def quote_usd_only(name: str, sym: str):
                     last = float(c.iloc[-1])
                     chg = (last - float(c.iloc[-2])) if c.shape[0] >= 2 else None
         if last is None: return None
-        return {"name":name, "sym":sym, "last":last, "chg":chg}
-    except: 
+        return {"name":name,"sym":sym,"last":last,"chg":chg}
+    except:
         return None
 
 @st.cache_data(ttl=75)
@@ -147,17 +145,17 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ========= QUOTES PRINCIPALES (USD/MXN, LE=F, HE=F) =========
+# ====== QUOTES PRINCIPALES ======
 @st.cache_data(ttl=75)
 def get_last_from_yahoo(symbol: str):
     try:
         t = yf.Ticker(symbol)
         fi = t.fast_info or {}
-        lp = fi.get("last_price", None); pc = fi.get("previous_close", None)
+        lp = fi.get("last_price"); pc = fi.get("previous_close")
         if lp is not None:
             lp = float(lp); return lp, (lp - float(pc)) if pc is not None else None
         inf = t.info or {}
-        lp = inf.get("regularMarketPrice", None); pc = inf.get("regularMarketPreviousClose", None)
+        lp = inf.get("regularMarketPrice"); pc = inf.get("regularMarketPreviousClose")
         if lp is not None:
             lp = float(lp); return lp, (lp - float(pc)) if pc is not None else None
         d = t.history(period="10d", interval="1d")
@@ -172,8 +170,8 @@ def get_last_from_yahoo(symbol: str):
         return None, None
 
 fx, fx_chg = get_last_from_yahoo("MXN=X")
-lc, lc_chg = get_last_from_yahoo("LE=F")   # Live Cattle (USD/100 lb)
-lh, lh_chg = get_last_from_yahoo("HE=F")   # Lean Hogs  (USD/100 lb)
+lc, lc_chg = get_last_from_yahoo("LE=F")
+lh, lh_chg = get_last_from_yahoo("HE=F")
 
 def kpi_card(title, price, chg, unit):
     if price is None:
@@ -184,7 +182,7 @@ def kpi_card(title, price, chg, unit):
             price_html = f"<div class='big'>{fmt2(price)}{(' <span class=\"unit-inline\">'+unit+'</span>') if unit else ''}</div>"
             delta_html = ""
         else:
-            cls = "up" if chg>=0 else "down"; arr = "▲" if chg>=0 else "▼"
+            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             price_html = f"<div class='big'>{fmt2(price)}{(' <span class=\"unit-inline\">'+unit+'</span>') if unit else ''}</div>"
             delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"""<div class="card"><div class="kpi">
@@ -197,20 +195,21 @@ st.markdown(kpi_card("Res en pie", lc, lc_chg, "USD/100 lb"),   unsafe_allow_htm
 st.markdown(kpi_card("Cerdo en pie", lh, lh_chg, "USD/100 lb"), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ========= USDA — 2 PECHUGAS (fix: snapshot normalizado) =========
+# ====== USDA — Pechuga B/S y T/S con fallback a snapshot legado ======
 POULTRY_URLS = [
   "https://www.ams.usda.gov/mnreports/aj_py018.txt",
   "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
   "https://www.ams.usda.gov/mnreports/py018.txt",
   "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
-HDR = {"User-Agent":"Mozilla/5.0", "Cache-Control":"no-cache"}
+HDR = {"User-Agent":"Mozilla/5.0","Cache-Control":"no-cache"}
 
-# Etiquetas “de pantalla” que mostramos
 LAB_BS = "Pechuga B/S"
 LAB_TS = "Pechuga T/S (strapless)"
 
-# Sinónimos que pueden existir en snapshots viejos / reportes
+SNAP_PRIMARY   = "poultry_last_pechugas.json"  # nombre nuevo
+SNAP_LEGACY    = "poultry_last.json"           # nombre viejo
+
 SNAP_KEYS_MAP = {
     LAB_BS: [r"PECHUGA\s*B/?S", r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)", r"BREAST B/S(?!.*JUMBO)"],
     LAB_TS: [r"PECHUGA\s*T/?S", r"BREAST\s*T/?S", r"STRAPLESS"]
@@ -231,102 +230,87 @@ def _avg(U: str) -> float|None:
         except: return None
     return None
 
-@st.cache_data(ttl=1800)
+@st.cache_data(ttl=120)  # ttl corto para no congelar un vacío
 def fetch_pechugas()->dict:
-    """Intenta traer B/S y T/S del USDA; si no hay, regresa {} (no se cachea nada más)."""
     for url in POULTRY_URLS:
         try:
             r = requests.get(url, timeout=15, headers=HDR)
             if r.status_code != 200: 
                 continue
             txt = r.text
-            if "<html" in txt.lower():  # redirección/proxy
+            if "<html" in txt.lower():  # bloqueos/proxies
                 continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
             for ln in lines:
                 U = ln.upper()
-                # T/S
                 if any(re.search(p, U) for p in SNAP_KEYS_MAP[LAB_TS]):
                     v = _avg(U)
-                    if v is not None:
-                        out[LAB_TS] = v
-                # B/S (no Jumbo)
+                    if v is not None: out[LAB_TS] = v
                 if any(re.search(p, U) for p in SNAP_KEYS_MAP[LAB_BS]):
                     v = _avg(U)
-                    if v is not None:
-                        out[LAB_BS] = v
+                    if v is not None: out[LAB_BS] = v
             if out:
                 return out
         except:
             continue
     return {}
 
-SNAP = "poultry_last_pechugas.json"
-
-def load_snap() -> dict:
-    if not os.path.exists(SNAP): return {}
+def load_json(path:str)->dict:
+    if not os.path.exists(path): return {}
     try:
-        with open(SNAP,"r") as f: return json.load(f)
-    except:
-        return {}
+        with open(path,"r") as f: return json.load(f)
+    except: return {}
 
-def save_snap(d: dict):
+def save_both_snapshots(d:dict):
     try:
-        with open(SNAP,"w") as f:
-            json.dump({k: float(v) for k,v in d.items()}, f)
-    except:
-        pass
+        with open(SNAP_PRIMARY,"w") as f: json.dump({k:float(v) for k,v in d.items()}, f)
+    except: pass
+    try:
+        with open(SNAP_LEGACY,"w") as f: json.dump({k:float(v) for k,v in d.items()}, f)
+    except: pass
 
-def _normalize_from_snapshot(raw: dict) -> dict:
-    """Toma cualquier snapshot (con etiquetas viejas o en inglés) y devuelve un dict con nuestras 2 claves estándar."""
-    if not raw: 
-        return {}
-    norm = {}
-    upper_items = [(k, raw[k]["price"] if isinstance(raw[k], dict) else raw[k]) for k in raw]
+def normalize_snapshot(raw:dict)->dict:
+    if not raw: return {}
+    # raw puede venir como {"clave": 2.65} o {"clave":{"price":2.65}}
+    items=[]
+    for k,v in raw.items():
+        val = v.get("price") if isinstance(v,dict) else v
+        items.append((str(k), val))
+    norm={}
     for target, pats in SNAP_KEYS_MAP.items():
-        # Busca el primer match por regex dentro de las claves existentes
-        for k,val in upper_items:
-            U = str(k).upper()
-            if any(re.search(p, U) for p in pats):
+        for k,val in items:
+            U = k.upper()
+            if any(re.search(p,U) for p in pats):
                 try:
                     if val is not None:
-                        norm[target] = float(val)
-                        break
-                except:
-                    continue
+                        norm[target] = float(val); break
+                except: pass
     return norm
 
 def pechugas_with_snapshot():
-    """Regresa (result_dict, stale, seeded).
-       result_dict: {label: {price, delta}} para B/S y T/S."""
-    cur = fetch_pechugas()
-    prev_raw = load_snap()
+    today = fetch_pechugas()          # intenta hoy
+    snap_new = load_json(SNAP_PRIMARY)
+    snap_old = load_json(SNAP_LEGACY)
+    snap_norm = normalize_snapshot(snap_new) or normalize_snapshot(snap_old)
 
-    # Normaliza el snapshot por si las etiquetas viejas no coinciden
-    prev_norm = _normalize_from_snapshot(prev_raw)
-
-    # Caso 1: hoy sí obtuvimos datos
-    if cur:
-        res = {}
-        for k, v in cur.items():
-            pv = prev_norm.get(k, None)
-            dlt = 0.0 if pv is None else (float(v) - float(pv))
+    if today:
+        res={}
+        for k,v in today.items():
+            pv = snap_norm.get(k)
+            dlt = 0.0 if pv is None else (float(v)-float(pv))
             res[k] = {"price": float(v), "delta": float(dlt)}
-        # guarda snapshot SOLO si hay datos
-        save_snap(cur)
-        seeded = True if not prev_norm else False
+        save_both_snapshots(today)    # guarda con ambos nombres
+        seeded = True if not snap_norm else False
         return res, False, seeded
 
-    # Caso 2: no hay datos nuevos, usamos snapshot normalizado si existe
-    if prev_norm:
-        res = {k: {"price": float(prev_norm[k]), "delta": 0.0} for k in prev_norm}
+    if snap_norm:
+        res = {k: {"price": float(v), "delta": 0.0} for k,v in snap_norm.items()}
         return res, True, False
 
-    # Caso 3: primera vida sin snapshot
-    base = {LAB_BS: {"price": None, "delta": 0.0},
-            LAB_TS: {"price": None, "delta": 0.0}}
-    return base, True, False
+    # primerísima vida sin nada
+    return {LAB_BS: {"price": None, "delta": 0.0},
+            LAB_TS: {"price": None, "delta": 0.0}}, True, False
 
 pech, stale, seeded = pechugas_with_snapshot()
 
@@ -354,7 +338,7 @@ with colA:
 with colB:
     st.markdown(kpi_pechuga("Pechuga T/S (strapless)", pech.get("Pechuga T/S (strapless)", {})), unsafe_allow_html=True)
 
-# ========= CINTA DE NOTICIAS =========
+# ====== NOTICIAS ======
 news = [
   "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
@@ -369,11 +353,10 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ========= PIE + RERUN =========
+# ====== PIE + AUTO-REFRESH ======
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True
 )
-
 time.sleep(60)
 st.rerun()
