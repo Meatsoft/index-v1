@@ -1,4 +1,4 @@
-# app.py — LaSultana Meat Index (2 pechugas + USD tickers limpios)
+# app.py — LaSultana Meat Index (2 pechugas + USD tickers limpios + JK_PY001)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -111,7 +111,7 @@ COMPANIES_USD = [
     ("Hormel Foods","HRL"),
     ("Seaboard","SEB"),
     ("Minerva","MRVSY"),          # OTC USD
-    ("Marfrig","MRRTY"),          # si está sin datos, se omite
+    ("Marfrig","MRRTY"),          # si no hay datos, se omite
     ("Cal-Maine Foods","CALM"),
     ("Vital Farms","VITL"),
     ("WH Group","WHGLY"),         # OTC USD
@@ -187,7 +187,7 @@ st.markdown(
 def get_yahoo(sym: str):
     return quote_last_and_change(sym)
 
-fx, fx_chg = get_yahoo("MXN=X")  # USD/MXN (cuántos MXN por 1 USD)
+fx, fx_chg = get_yahoo("MXN=X")  # USD/MXN (MXN por 1 USD)
 lc, lc_chg = get_yahoo("LE=F")   # Live Cattle
 lh, lh_chg = get_yahoo("HE=F")   # Lean Hogs
 
@@ -238,8 +238,13 @@ st.markdown(kpi_cme("Res en pie", lc, lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== USDA POULTRY (solo B/S y T/S) ====================
+# ==================== USDA POULTRY (B/S y T/S con JK_PY001 + respaldo AJ_PY018) ====================
 POULTRY_URLS = [
+    # 1) Atlanta Daily Broiler/Fryer Parts (USDA AMS): suele traer Wtd Avg de B/S y T/S
+    "https://www.ams.usda.gov/mnreports/jk_py001.txt",
+    "https://www.ams.usda.gov/mnreports/JK_PY001.txt",
+    "https://mymarketnews.ams.usda.gov/filerepo/JK_PY001.TXT",
+    # 2) Respaldo: a veces no tiene B/S o T/S
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
     "https://www.ams.usda.gov/mnreports/py018.txt",
@@ -253,6 +258,7 @@ PECH_PATTERNS = {
 }
 
 def _extract_avg(U: str) -> float | None:
+    # Captura "WTD AVG", "WTD. AVG", "WEIGHTED AVG", y si no, el último número de un rango 123.45 - 125.00
     m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
     if m:
         try:
@@ -281,7 +287,8 @@ def fetch_usda_pechugas() -> dict:
             if r.status_code != 200:
                 continue
             txt = r.text
-            if "<html" in txt.lower():  # evitar redirecciones
+            if "<html" in txt.lower():
+                # evita proxys/redirects que regresan HTML
                 continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
@@ -405,6 +412,5 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Refresco hands-free (sin st.autorefresh para evitar errores)
-time.sleep(60)
-st.rerun()
+# ==================== REFRESCO SUAVE (sin parpadeo) ====================
+st.autorefresh(interval=60_000, key="autor")
