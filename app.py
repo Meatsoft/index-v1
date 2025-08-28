@@ -1,13 +1,13 @@
-# app.py — LaSultana Meat Index (fix snapshot legado + TTL)
+# app.py — LaSultana Meat Index (Yahoo + USDA, sin secrets)
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 
-# ====== ESTILOS (igual UI) ======
+# ============ ESTILOS ============
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
 :root{
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b; --font:"Manrope","Inter","Segoe UI",Roboto,Arial,sans-serif;
@@ -15,48 +15,55 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden;}
-div[data-testid="stStatusWidget"]{display:none!important}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:18px}
+header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
-/* Tarjetas/ KPIs más delgadas */
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:14px}
-.kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi .title{font-size:14px;color:var(--muted)}
-.kpi .big{font-size:36px;font-weight:800;letter-spacing:.2px}
-.kpi .delta{font-size:15px;margin-left:10px}
-.unit-inline{font-size:.70em;color:var(--muted);font-weight:600;letter-spacing:.3px}
-
-/* Grid */
-.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
+/* Oculta spinner y barra de estado para que no se vea el “reiniciando” */
+.stSpinner, div[data-testid="stStatusWidget"] { display:none !important; }
 
 /* Logo */
-.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:24px 0 18px}
+.logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
 /* Cinta bursátil */
-.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:14px}
-.tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform}
+.tape{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
+.tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
-/* Cinta de noticias (un poco más rápida) */
-.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 14px}
-.tape-news-track{display:flex;width:max-content;animation:marqueeNews 110s linear infinite;will-change:transform}
+/* KPIs */
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
+.kpi{display:flex;justify-content:space-between;align-items:flex-start}
+.kpi .title{font-size:18px;color:var(--muted)}
+.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
+.kpi .delta{font-size:20px;margin-left:12px}
+.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+
+/* Tabla pollo (2 tarjetas con esquinas redondeadas) */
+.pechugas .panel{border:1px solid var(--line);border-radius:12px;padding:10px}
+.pechugas table{width:100%;border-collapse:separate;border-spacing:0}
+.pechugas th,.pechugas td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+.pechugas th{text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px}
+.pechugas tr:first-child th:first-child{border-top-left-radius:12px}
+.pechugas tr:first-child th:last-child{border-top-right-radius:12px}
+.pechugas tr:last-child td:first-child{border-bottom-left-radius:12px;border-bottom:0}
+.pechugas tr:last-child td:last-child{border-bottom-right-radius:12px;border-bottom:0}
+.price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
+.price-delta{font-size:20px;margin-left:10px}
+.unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+.pechugas td:last-child{text-align:right}
+
+/* Noticias (5% más rápida) */
+.tape-news{border:1px solid var(--line);border-radius:10px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
+.tape-news-track{display:flex;width:max-content;animation:marqueeNews 143s linear infinite;} /* 150s → 143s ≈ +5% */
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
 @keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .caption{color:var(--muted)!important}
-
-/* Badge con 60% menos padding vertical y un pelín de margen abajo */
-.badge{display:inline-block;padding:1px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);
-       font-size:12px;line-height:1.1;vertical-align:middle;margin-left:8px;margin-bottom:2px}
-
-/* Título Piezas (con “tantitito” padding abajo) */
-.section-title{font-size:20px;color:var(--txt);margin:0 0 8px 0}
+.badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;margin-left:8px}
 </style>
 """, unsafe_allow_html=True)
 
-# ====== HELPERS ======
 def fmt2(x: float) -> str:
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -64,299 +71,227 @@ def fmt4(x: float) -> str:
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
-# ====== LOGO ======
+# ============ Logo ============
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ====== CINTA BURSÁTIL (USD only) ======
-RAW_COMPANIES = [
+# ============ Cinta bursátil (sin MXN y sin tickers inactivos) ============
+COMPANIES = [
     ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
     ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"), ("Marfrig","MRRTY"),
     ("Maple Leaf Foods","MFI.TO"), ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"),
-    ("Grupo KUO","KUOB.MX"),
-    ("WH Group","WHGLY"), ("Minupar Participações","MNPR3.SA"),
-    ("Excelsior Alimentos","BAUH4.SA"), ("Wens Foodstuff Group","300498.SZ"),
-    ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
-    ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"),
-    ("Walmart","WMT"),
+    ("Grupo KUO","KUOB.MX"),  # MXN pero activo; lo dejamos si te interesa verlo en MXN
+    # Quitados: BAFARB.MX (sin datos frescos), ALSEA.MX (MXN/retail)
+    ("WH Group","WHGLY"), ("Wingstop","WING"), ("Yum! Brands","YUM"),
+    ("Restaurant Brands Intl.","QSR"), ("Sysco","SYY"), ("US Foods","USFD"),
+    ("Performance Food Group","PFGC"), ("Walmart","WMT"),
 ]
 
 @st.cache_data(ttl=75)
-def quote_usd_only(name: str, sym: str):
+def yf_quote(sym:str):
     try:
         t = yf.Ticker(sym)
-        cur = None
-        try: cur = (t.fast_info or {}).get("currency", None)
-        except: pass
-        if not cur:
-            try: cur = (t.info or {}).get("currency", None)
-            except: pass
-        if cur != "USD":  # filtramos no-USD
-            return None
-        last, chg = None, None
-        try:
-            fi = t.fast_info or {}
-            lp = fi.get("last_price"); pc = fi.get("previous_close")
-            if lp is not None:
-                last = float(lp); chg = (last - float(pc)) if pc is not None else None
-        except: pass
-        if last is None:
-            try:
-                inf = t.info or {}
-                lp = inf.get("regularMarketPrice"); pc = inf.get("regularMarketPreviousClose")
-                if lp is not None:
-                    last = float(lp); chg = (last - float(pc)) if pc is not None else None
-            except: pass
-        if last is None:
-            d = t.history(period="10d", interval="1d")
-            if d is not None and not d.empty:
-                c = d["Close"].dropna()
-                if not c.empty:
-                    last = float(c.iloc[-1])
-                    chg = (last - float(c.iloc[-2])) if c.shape[0] >= 2 else None
-        if last is None: return None
-        return {"name":name,"sym":sym,"last":last,"chg":chg}
-    except:
-        return None
-
-@st.cache_data(ttl=75)
-def build_ticker_line():
-    items=[]
-    for n,s in RAW_COMPANIES:
-        q = quote_usd_only(n,s)
-        if not q: continue
-        if q["chg"] is None:
-            items.append(f"<span class='item'>{q['name']} ({q['sym']}) <b>{q['last']:.2f}</b></span>")
-        else:
-            cls="up" if q["chg"]>=0 else "down"; arr="▲" if q["chg"]>=0 else "▼"
-            items.append(f"<span class='item'>{q['name']} ({q['sym']}) "
-                         f"<b class='{cls}'>{q['last']:.2f} {arr} {abs(q['chg']):.2f}</b></span>")
-    return "".join(items)
-
-ticker_html = build_ticker_line()
-st.markdown(f"""
-<div class='tape'>
-  <div class='tape-track'>
-    <div class='tape-group'>{ticker_html}</div>
-    <div class='tape-group' aria-hidden='true'>{ticker_html}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
-
-# ====== QUOTES PRINCIPALES ======
-@st.cache_data(ttl=75)
-def get_last_from_yahoo(symbol: str):
+        fi = getattr(t, "fast_info", {}) or {}
+        last = fi.get("last_price", None)
+        prev = fi.get("previous_close", None)
+        if last is not None:
+            chg = (float(last) - float(prev)) if prev is not None else None
+            return float(last), chg
+    except: pass
     try:
-        t = yf.Ticker(symbol)
-        fi = t.fast_info or {}
-        lp = fi.get("last_price"); pc = fi.get("previous_close")
-        if lp is not None:
-            lp = float(lp); return lp, (lp - float(pc)) if pc is not None else None
-        inf = t.info or {}
-        lp = inf.get("regularMarketPrice"); pc = inf.get("regularMarketPreviousClose")
-        if lp is not None:
-            lp = float(lp); return lp, (lp - float(pc)) if pc is not None else None
-        d = t.history(period="10d", interval="1d")
-        if d is not None and not d.empty:
-            c = d["Close"].dropna()
-            if not c.empty:
-                last = float(c.iloc[-1])
-                prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
-                return last, (last - prev) if prev is not None else None
-        return None, None
-    except:
+        info = yf.Ticker(sym).info or {}
+        last = info.get("regularMarketPrice", None)
+        prev = info.get("regularMarketPreviousClose", None)
+        if last is not None:
+            chg = (float(last) - float(prev)) if prev is not None else None
+            return float(last), chg
+    except: pass
+    try:
+        d = yf.Ticker(sym).history(period="10d", interval="1d")
+        if d is None or d.empty: return None, None
+        c = d["Close"].dropna()
+        last = float(c.iloc[-1])
+        prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
+        chg = (last - prev) if prev is not None else None
+        return last, chg
+    except: 
         return None, None
 
-fx, fx_chg = get_last_from_yahoo("MXN=X")
-lc, lc_chg = get_last_from_yahoo("LE=F")
-lh, lh_chg = get_last_from_yahoo("HE=F")
-
-def kpi_card(title, price, chg, unit):
-    if price is None:
-        price_html = f"<div class='big'>N/D{(' <span class=\"unit-inline\">'+unit+'</span>') if unit else ''}</div>"
-        delta_html = ""
+items=[]
+for name,sym in COMPANIES:
+    last,chg=yf_quote(sym)
+    if last is None:
+        items.append(f"<span class='item'>{name} ({sym}) <b class='muted'>—</b></span>")
     else:
         if chg is None:
-            price_html = f"<div class='big'>{fmt2(price)}{(' <span class=\"unit-inline\">'+unit+'</span>') if unit else ''}</div>"
-            delta_html = ""
+            items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            price_html = f"<div class='big'>{fmt2(price)}{(' <span class=\"unit-inline\">'+unit+'</span>') if unit else ''}</div>"
-            delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+            items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
+line="".join(items)
+st.markdown(f"""
+<div class='tape'><div class='tape-track'>
+  <div class='tape-group'>{line}</div>
+  <div class='tape-group' aria-hidden='true'>{line}</div>
+</div></div>""", unsafe_allow_html=True)
+
+# ============ FX y futuros (Yahoo SIEMPRE) ============
+@st.cache_data(ttl=75)
+def get_fx(): return yf_quote("MXN=X")
+@st.cache_data(ttl=75)
+def get_last(sym:str): return yf_quote(sym)
+
+fx,fx_chg = get_fx()
+lc,lc_chg = get_last("LE=F")   # Live Cattle
+lh,lh_chg = get_last("HE=F")   # Lean Hogs
+
+def kpi(title, price, chg):
+    unit="USD/100 lb"
+    if title=="USD/MXN": unit=""  # corrige la unidad del FX
+    if price is None:
+        price_html=f"<div class='big'>N/D{('' if not unit else ' <span class=\"unit-inline\">'+unit+'</span>')}</div>"; delta_html=""
+    else:
+        if chg is None:
+            price_html=f"<div class='big'>{(fmt4(price) if title=='USD/MXN' else fmt2(price))}{('' if not unit else ' <span class=\"unit-inline\">'+unit+'</span>')}</div>"; delta_html=""
+        else:
+            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
+            price_html=f"<div class='big'>{(fmt4(price) if title=='USD/MXN' else fmt2(price))}{('' if not unit else ' <span class=\"unit-inline\">'+unit+'</span>')}</div>"
+            delta_html=f"<div class='delta {cls}'>{arr} {(fmt4(abs(chg)) if title=='USD/MXN' else fmt2(abs(chg)))}</div>"
     return f"""<div class="card"><div class="kpi">
       <div><div class="title">{title}</div>{price_html}</div>{delta_html}
     </div></div>"""
 
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
-st.markdown(kpi_card("USD/MXN", fx, fx_chg, None),              unsafe_allow_html=True)
-st.markdown(kpi_card("Res en pie", lc, lc_chg, "USD/100 lb"),   unsafe_allow_html=True)
-st.markdown(kpi_card("Cerdo en pie", lh, lh_chg, "USD/100 lb"), unsafe_allow_html=True)
+st.markdown(kpi("USD/MXN", fx, fx_chg), unsafe_allow_html=True)
+st.markdown(kpi("Res en pie", lc, lc_chg), unsafe_allow_html=True)
+st.markdown(kpi("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ====== USDA — Pechuga B/S y T/S con fallback a snapshot legado ======
-POULTRY_URLS = [
-  "https://www.ams.usda.gov/mnreports/aj_py018.txt",
-  "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
-  "https://www.ams.usda.gov/mnreports/py018.txt",
-  "https://www.ams.usda.gov/mnreports/PY018.txt",
+# ============ USDA — Pechuga B/S y T/S con snapshot ============
+POULTRY_URLS=[
+ "https://www.ams.usda.gov/mnreports/aj_py018.txt",
+ "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
+ "https://www.ams.usda.gov/mnreports/py018.txt",
+ "https://www.ams.usda.gov/mnreports/PY018.txt",
 ]
-HDR = {"User-Agent":"Mozilla/5.0","Cache-Control":"no-cache"}
-
-LAB_BS = "Pechuga B/S"
-LAB_TS = "Pechuga T/S (strapless)"
-
-SNAP_PRIMARY   = "poultry_last_pechugas.json"  # nombre nuevo
-SNAP_LEGACY    = "poultry_last.json"           # nombre viejo
-
-SNAP_KEYS_MAP = {
-    LAB_BS: [r"PECHUGA\s*B/?S", r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)", r"BREAST B/S(?!.*JUMBO)"],
-    LAB_TS: [r"PECHUGA\s*T/?S", r"BREAST\s*T/?S", r"STRAPLESS"]
+HDR={"User-Agent":"Mozilla/5.0"}
+PECH_PAT={
+ "Pechuga B/S":[r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
+ "Pechuga T/S (strapless)":[r"BREAST\s*T/?S", r"STRAPLESS"],
 }
-
-def _avg(U: str) -> float|None:
-    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
-    if m:
-        try: return float(m.group(1))
+def _avg(U:str):
+    m=re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)",U)
+    if m: 
+        try:return float(m.group(1))
         except: pass
-    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", U)
+    m2=re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)",U)
     if m2:
-        try: return (float(m2.group(1)) + float(m2.group(2))) / 2.0
+        try: return (float(m2.group(1))+float(m2.group(2)))/2.0
         except: pass
-    nums = re.findall(r"(\d+(?:\.\d+)?)", U)
+    nums=re.findall(r"(\d+(?:\.\d+)?)",U)
     if nums:
-        try: return float(nums[-1])
+        try:return float(nums[-1])
         except: return None
     return None
 
-@st.cache_data(ttl=120)  # ttl corto para no congelar un vacío
+@st.cache_data(ttl=1800)
 def fetch_pechugas()->dict:
     for url in POULTRY_URLS:
         try:
-            r = requests.get(url, timeout=15, headers=HDR)
-            if r.status_code != 200: 
-                continue
-            txt = r.text
-            if "<html" in txt.lower():  # bloqueos/proxies
-                continue
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-            out = {}
-            for ln in lines:
-                U = ln.upper()
-                if any(re.search(p, U) for p in SNAP_KEYS_MAP[LAB_TS]):
-                    v = _avg(U)
-                    if v is not None: out[LAB_TS] = v
-                if any(re.search(p, U) for p in SNAP_KEYS_MAP[LAB_BS]):
-                    v = _avg(U)
-                    if v is not None: out[LAB_BS] = v
-            if out:
-                return out
-        except:
-            continue
+            r=requests.get(url,timeout=12,headers=HDR)
+            if r.status_code!=200: continue
+            lines=[ln.strip() for ln in r.text.splitlines() if ln.strip()]
+            out={}
+            for disp,pats in PECH_PAT.items():
+                for ln in lines:
+                    U=ln.upper()
+                    if any(re.search(p,U) for p in pats):
+                        v=_avg(U)
+                        if v is not None:
+                            out[disp]=v; break
+            if out: return out
+        except: continue
     return {}
 
-def load_json(path:str)->dict:
-    if not os.path.exists(path): return {}
-    try:
-        with open(path,"r") as f: return json.load(f)
+SNAP="poultry_last_pechugas.json"
+def load_snap():
+    if not os.path.exists(SNAP): return {}
+    try: 
+        with open(SNAP,"r") as f: return json.load(f)
     except: return {}
-
-def save_both_snapshots(d:dict):
+def save_snap(d:dict):
     try:
-        with open(SNAP_PRIMARY,"w") as f: json.dump({k:float(v) for k,v in d.items()}, f)
+        with open(SNAP,"w") as f: json.dump({k:float(v) for k,v in d.items()},f)
     except: pass
-    try:
-        with open(SNAP_LEGACY,"w") as f: json.dump({k:float(v) for k,v in d.items()}, f)
-    except: pass
-
-def normalize_snapshot(raw:dict)->dict:
-    if not raw: return {}
-    # raw puede venir como {"clave": 2.65} o {"clave":{"price":2.65}}
-    items=[]
-    for k,v in raw.items():
-        val = v.get("price") if isinstance(v,dict) else v
-        items.append((str(k), val))
-    norm={}
-    for target, pats in SNAP_KEYS_MAP.items():
-        for k,val in items:
-            U = k.upper()
-            if any(re.search(p,U) for p in pats):
-                try:
-                    if val is not None:
-                        norm[target] = float(val); break
-                except: pass
-    return norm
 
 def pechugas_with_snapshot():
-    today = fetch_pechugas()          # intenta hoy
-    snap_new = load_json(SNAP_PRIMARY)
-    snap_old = load_json(SNAP_LEGACY)
-    snap_norm = normalize_snapshot(snap_new) or normalize_snapshot(snap_old)
-
-    if today:
+    cur=fetch_pechugas()
+    prev=load_snap()
+    seeded=False
+    if cur:
         res={}
-        for k,v in today.items():
-            pv = snap_norm.get(k)
-            dlt = 0.0 if pv is None else (float(v)-float(pv))
-            res[k] = {"price": float(v), "delta": float(dlt)}
-        save_both_snapshots(today)    # guarda con ambos nombres
-        seeded = True if not snap_norm else False
-        return res, False, seeded
-
-    if snap_norm:
-        res = {k: {"price": float(v), "delta": 0.0} for k,v in snap_norm.items()}
-        return res, True, False
-
-    # primerísima vida sin nada
-    return {LAB_BS: {"price": None, "delta": 0.0},
-            LAB_TS: {"price": None, "delta": 0.0}}, True, False
+        for k,v in cur.items():
+            pv=prev.get(k,None); 
+            if isinstance(pv,dict): pv=pv.get("price")
+            dlt=0.0 if pv is None else (float(v)-float(pv))
+            res[k]={"price":float(v),"delta":float(dlt)}
+        save_snap(cur); 
+        if not prev: seeded=True
+        return res,False,seeded
+    if prev:
+        res={k:{"price":float((v.get("price") if isinstance(v,dict) else v)),"delta":0.0} for k,v in prev.items()}
+        return res,True,False
+    base={k:{"price":None,"delta":0.0} for k in PECH_PAT.keys()}
+    return base,True,False
 
 pech, stale, seeded = pechugas_with_snapshot()
+order=["Pechuga B/S","Pechuga T/S (strapless)"]
+rows=[]
+for name in order:
+    it=pech.get(name, {"price":None,"delta":0.0})
+    price,delta=it["price"], it["delta"]
+    cls="up" if (delta or 0)>=0 else "down"; arr="▲" if (delta or 0)>=0 else "▼"
+    price_txt=fmt2(price) if price is not None else "—"
+    delta_txt=f"{arr} {fmt2(abs(delta))}" if price is not None else "—"
+    rows.append(
+        f"<tr><td>{name}</td>"
+        f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--p'>USD/lb</span></span> "
+        f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
+    )
+badge=" <span class='badge'>último disponible</span>" if stale else (" <span class='badge'>actualizado</span>" if seeded else "")
 
-def kpi_pechuga(nombre: str, info: dict) -> str:
-    price = info.get("price"); delta = info.get("delta", 0.0)
-    unit = "USD/lb"
-    if price is None:
-        price_html = f"<div class='big'>— <span class='unit-inline'>{unit}</span></div>"
-        delta_html = ""
-    else:
-        cls  = "up" if (delta or 0) >= 0 else "down"
-        arr  = "▲" if (delta or 0) >= 0 else "▼"
-        price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
-        delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(delta))}</div>"
-    return f"""<div class="card"><div class="kpi">
-        <div><div class="title">{nombre}</div>{price_html}</div>{delta_html}
-    </div></div>"""
+st.markdown(f"""
+<div class="card pechugas">
+  <div class="title" style="color:var(--txt);margin-bottom:6px">Piezas de Pollo — U.S. National (USDA){badge}</div>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
+      <tbody>{''.join(rows)}</tbody>
+    </table>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-badge = " <span class='badge'>último disponible</span>" if stale else (" <span class='badge'>actualizado</span>" if seeded else "")
-st.markdown(f"<div class='section-title'>Piezas de Pollo — U.S. National (USDA){badge}</div>", unsafe_allow_html=True)
-
-colA, colB = st.columns(2)
-with colA:
-    st.markdown(kpi_pechuga("Pechuga B/S", pech.get("Pechuga B/S", {})), unsafe_allow_html=True)
-with colB:
-    st.markdown(kpi_pechuga("Pechuga T/S (strapless)", pech.get("Pechuga T/S (strapless)", {})), unsafe_allow_html=True)
-
-# ====== NOTICIAS ======
-news = [
+# Noticias + pie
+news=[
   "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada, foodservice suave.",
   "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen pese a costos.",
-  "Pechuga B/S y T/S estables; revisar spreads USD/lb → MXN/kg y logística.",
-  "FX: peso fuerte abarata importaciones; monitorear costos de flete refrigerado."
+  "Pechuga B/S & T/S estables; revisar spreads USD/lb → MXN/kg y logística.",
 ]
-k = int(time.time()//30) % len(news)
+k=int(time.time()//30)%len(news)
 st.markdown(f"""
 <div class='tape-news'><div class='tape-news-track'>
   <div class='tape-news-group'><span class='item'>{news[k]}</span></div>
   <div class='tape-news-group' aria-hidden='true'><span class='item'>{news[k]}</span></div>
-</div></div>
-""", unsafe_allow_html=True)
+</div></div>""", unsafe_allow_html=True)
 
-# ====== PIE + AUTO-REFRESH ======
 st.markdown(
   f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
   unsafe_allow_html=True
 )
+
+# Refresh suave sin spinner (oculto)
 time.sleep(60)
-st.rerun()
+st.experimental_rerun()
