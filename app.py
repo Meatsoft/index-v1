@@ -1,4 +1,6 @@
-# app.py — LaSultana Meat Index (2 pechugas + USD tickers limpios + JK_PY001)
+# app.py — LaSultana Meat Index (2 pechugas + USD tickers limpios)
+# Compatible con Streamlit 1.36 (sin st.autorefresh)
+
 import os, json, re, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -67,7 +69,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .price-delta{font-size:20px;margin-left:10px}
 .unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Noticias (22% más rápida + anti-ghosting) */
+/* Noticias (fluida) */
 .tape-news{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
 .tape-news-track{
   display:flex;width:max-content;animation:marqueeNews 117s linear infinite;
@@ -102,7 +104,6 @@ if os.path.exists("ILSMeatIndex.png"):
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== CINTA SUPERIOR (solo USD sólidos) ====================
-# Si no hay datos del ticker, se omite (no se muestra en gris)
 COMPANIES_USD = [
     ("Tyson Foods","TSN"),
     ("Pilgrim’s Pride","PPC"),
@@ -126,6 +127,7 @@ COMPANIES_USD = [
 
 @st.cache_data(ttl=75)
 def quote_last_and_change(sym: str):
+    # 1) fast_info
     try:
         t = yf.Ticker(sym)
         fi = t.fast_info
@@ -136,6 +138,7 @@ def quote_last_and_change(sym: str):
             return float(last), ch
     except Exception:
         pass
+    # 2) info
     try:
         inf = yf.Ticker(sym).info or {}
         last = inf.get("regularMarketPrice", None)
@@ -145,6 +148,7 @@ def quote_last_and_change(sym: str):
             return float(last), ch
     except Exception:
         pass
+    # 3) historial
     try:
         d = yf.Ticker(sym).history(period="10d", interval="1d")
         if d is None or d.empty:
@@ -161,7 +165,7 @@ items = []
 for name, sym in COMPANIES_USD:
     last, chg = quote_last_and_change(sym)
     if last is None:
-        continue
+        continue  # omitir tickers sin datos
     if chg is None:
         items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
@@ -187,9 +191,9 @@ st.markdown(
 def get_yahoo(sym: str):
     return quote_last_and_change(sym)
 
-fx, fx_chg = get_yahoo("MXN=X")  # USD/MXN (MXN por 1 USD)
-lc, lc_chg = get_yahoo("LE=F")   # Live Cattle
-lh, lh_chg = get_yahoo("HE=F")   # Lean Hogs
+fx, fx_chg = get_yahoo("MXN=X")  # USD/MXN (cuántos MXN por 1 USD)
+lc, lc_chg = get_yahoo("LE=F")   # Live Cattle (USD/100 lb)
+lh, lh_chg = get_yahoo("HE=F")   # Lean Hogs (USD/100 lb)
 
 def kpi_fx(title: str, value: float | None, chg: float | None) -> str:
     if value is None:
@@ -238,17 +242,17 @@ st.markdown(kpi_cme("Res en pie", lc, lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== USDA POULTRY (B/S y T/S con JK_PY001 + respaldo AJ_PY018) ====================
+# ==================== USDA POULTRY (solo B/S y T/S) ====================
+# Intentamos múltiples endpoints conocidos (variantes de nombre y reporte diario).
 POULTRY_URLS = [
-    # 1) Atlanta Daily Broiler/Fryer Parts (USDA AMS): suele traer Wtd Avg de B/S y T/S
-    "https://www.ams.usda.gov/mnreports/jk_py001.txt",
-    "https://www.ams.usda.gov/mnreports/JK_PY001.txt",
-    "https://mymarketnews.ams.usda.gov/filerepo/JK_PY001.TXT",
-    # 2) Respaldo: a veces no tiene B/S o T/S
+    # Reporte clásico de partes (texto plano)
     "https://www.ams.usda.gov/mnreports/aj_py018.txt",
     "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
     "https://www.ams.usda.gov/mnreports/py018.txt",
     "https://www.ams.usda.gov/mnreports/PY018.txt",
+    # Variantes comunes del daily composite de partes (por si lo publican como TXT)
+    "https://www.ams.usda.gov/mnreports/jk_py001.txt",
+    "https://www.ams.usda.gov/mnreports/JK_PY001.txt",
 ]
 HDR = {"User-Agent": "Mozilla/5.0"}
 
@@ -258,19 +262,21 @@ PECH_PATTERNS = {
 }
 
 def _extract_avg(U: str) -> float | None:
-    # Captura "WTD AVG", "WTD. AVG", "WEIGHTED AVG", y si no, el último número de un rango 123.45 - 125.00
+    # 1) Weighted Avg
     m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
     if m:
         try:
             return float(m.group(1))
         except:
             pass
+    # 2) Rango A - B -> promedio
     m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", U)
     if m2:
         try:
             return (float(m2.group(1)) + float(m2.group(2))) / 2.0
         except:
             pass
+    # 3) Último número de la línea como fallback
     nums = re.findall(r"(\d+(?:\.\d+)?)", U)
     if nums:
         try:
@@ -288,7 +294,7 @@ def fetch_usda_pechugas() -> dict:
                 continue
             txt = r.text
             if "<html" in txt.lower():
-                # evita proxys/redirects que regresan HTML
+                # Si es HTML (redirección/página), lo omitimos
                 continue
             lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
             out = {}
@@ -412,5 +418,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ==================== REFRESCO SUAVE (sin parpadeo) ====================
-st.autorefresh(interval=60_000, key="autor")
+# Refresco hands-free compatible con 1.36
+time.sleep(60)
+st.rerun()
