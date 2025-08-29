@@ -1,18 +1,21 @@
-# app.py — LaSultana Meat Index (2 pechugas + USD tickers limpios)
-# Compatible con Streamlit 1.36 (sin st.autorefresh)
+# LaSultana Meat Index — v1 con:
+# - Cinta bursátil (yfinance)
+# - USD/MXN, Res (LE=F), Cerdo (HE=F) (yfinance)
+# - KPI: Livestock Health Watch (US/BR/MX) — GDELT JSON + IA opcional (OPENAI_API_KEY)
+# - KPI: Frozen Meat Industry Monitor — señales reales + rotador con fade
+# - Sin cinta inferior; sin autorefresh (anti-parpadeo)
 
-import os, json, re, time, datetime as dt
+import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
 try:
     st.cache_data.clear()
-except:
+except Exception:
     pass
 
 # ====================== ESTILOS ======================
-st.markdown(
-    """
+st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700&display=swap');
 :root{
@@ -30,10 +33,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 /* Cinta bursátil */
 .tape{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
-.tape-track{
-  display:flex;width:max-content;animation:marquee 210s linear infinite;
-  will-change:transform;backface-visibility:hidden;transform:translateZ(0);
-}
+.tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform;backface-visibility:hidden;transform:translateZ(0)}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
@@ -47,55 +47,54 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* === Tabla de pollo (un solo marco, esquinas limpias) === */
-.card.pechugas{border:1px solid var(--line);border-radius:12px;overflow:hidden;padding:0;margin-bottom:18px}
-.pechugas table{width:100%;border-collapse:separate;border-spacing:0;margin:0}
-.pechugas th,.pechugas td{
-  padding:12px 14px; vertical-align:middle;
-  border-bottom:1px solid var(--line)!important;
-  border-left:0!important;border-right:0!important;border-top:0!important;
-}
-.pechugas thead th{
-  text-align:left;color:var(--muted);font-weight:700;letter-spacing:.2px;
-  border-bottom:1px solid var(--line)!important;
-}
-.pechugas tbody tr:last-child td{
-  border-bottom:0!important;
-  padding-bottom:10px;
-}
-.pechugas td:first-child{font-size:110%}
-.pechugas td:last-child{text-align:right}
-.price-lg{font-size:48px;font-weight:900;letter-spacing:.2px}
-.price-delta{font-size:20px;margin-left:10px}
-.unit-inline--p{font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+/* Health Watch */
+.hw-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.hw-col{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.hw-title{font-size:16px;color:var(--muted);margin-bottom:8px}
+.hw-item{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
+.dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
+.hw-meta{color:var(--muted);font-size:12px;margin-top:4px}
 
-/* Noticias (fluida) */
-.tape-news{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:52px;margin:0 0 18px}
-.tape-news-track{
-  display:flex;width:max-content;animation:marqueeNews 117s linear infinite;
-  will-change:transform;backface-visibility:hidden;transform:translateZ(0);
+/* Industry Monitor (rotador) */
+.im-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:110px;display:flex;align-items:center;justify-content:center}
+.im-wrap{position:relative;height:90px;overflow:hidden}
+.im-item{position:absolute;left:0;right:0;top:0;opacity:0;animation:fade 12s linear infinite}
+.im-item:nth-child(1){animation-delay:0s}
+.im-item:nth-child(2){animation-delay:4s}
+.im-item:nth-child(3){animation-delay:8s}
+@keyframes fade{
+  0% {opacity:0; transform:translateY(5px)}
+  5% {opacity:1; transform:translateY(0)}
+  30% {opacity:1}
+  33% {opacity:0; transform:translateY(-5px)}
+  100% {opacity:0}
 }
-.tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px;line-height:28px}
-@keyframes marqueeNews{from{transform:translateX(0)}to{transform:translateX(-50%)}}
-.caption{color:var(--muted)!important}
-.badge{display:inline-block;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px;margin-left:8px}
+.im-num{font-size:40px;font-weight:900;letter-spacing:.2px;margin-bottom:6px;text-align:center}
+.im-sub{font-size:16px;color:var(--muted);text-align:center}
+.im-badge{display:inline-block;margin-left:8px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px}
+.caption{color:var(--muted)!important;margin-top:8px}
 </style>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 # ==================== HELPERS ====================
 def fmt2(x: float | None) -> str:
-    if x is None:
-        return "—"
+    if x is None: return "—"
     s = f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
 def fmt4(x: float | None) -> str:
-    if x is None:
-        return "—"
+    if x is None: return "—"
     s = f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+def humanize_delta(minutes: float) -> str:
+    if minutes < 1: return "hace segundos"
+    if minutes < 60: return f"hace {int(minutes)} min"
+    hours = minutes/60
+    if hours < 24: return f"hace {int(hours)} h"
+    days = int(hours//24)
+    return f"hace {days} d"
 
 # ==================== LOGO ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -103,138 +102,88 @@ if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR (solo USD sólidos) ====================
+# ==================== CINTA SUPERIOR (USD firmes) ====================
 COMPANIES_USD = [
-    ("Tyson Foods","TSN"),
-    ("Pilgrim’s Pride","PPC"),
-    ("JBS","JBS"),
-    ("BRF","BRFS"),
-    ("Hormel Foods","HRL"),
-    ("Seaboard","SEB"),
-    ("Minerva","MRVSY"),          # OTC USD
-    ("Marfrig","MRRTY"),          # si no hay datos, se omite
-    ("Cal-Maine Foods","CALM"),
-    ("Vital Farms","VITL"),
-    ("WH Group","WHGLY"),         # OTC USD
-    ("Wingstop","WING"),
-    ("Yum! Brands","YUM"),
-    ("Restaurant Brands Intl.","QSR"),
-    ("Sysco","SYY"),
-    ("US Foods","USFD"),
-    ("Performance Food Group","PFGC"),
-    ("Walmart","WMT"),
+    ("Tyson Foods","TSN"), ("Pilgrim’s Pride","PPC"), ("JBS","JBS"), ("BRF","BRFS"),
+    ("Hormel Foods","HRL"), ("Seaboard","SEB"), ("Minerva","MRVSY"),
+    ("Cal-Maine Foods","CALM"), ("Vital Farms","VITL"), ("WH Group","WHGLY"),
+    ("Wingstop","WING"), ("Yum! Brands","YUM"), ("Restaurant Brands Intl.","QSR"),
+    ("Sysco","SYY"), ("US Foods","USFD"), ("Performance Food Group","PFGC"), ("Walmart","WMT"),
 ]
 
 @st.cache_data(ttl=75)
 def quote_last_and_change(sym: str):
-    # 1) fast_info
     try:
-        t = yf.Ticker(sym)
-        fi = t.fast_info
-        last = fi.get("last_price", None)
-        prev = fi.get("previous_close", None)
+        t = yf.Ticker(sym); fi = t.fast_info
+        last = fi.get("last_price"); prev = fi.get("previous_close")
         if last is not None:
-            ch = (float(last) - float(prev)) if prev is not None else None
-            return float(last), ch
-    except Exception:
-        pass
-    # 2) info
+            return float(last), (float(last)-float(prev)) if prev is not None else None
+    except: pass
     try:
         inf = yf.Ticker(sym).info or {}
-        last = inf.get("regularMarketPrice", None)
-        prev = inf.get("regularMarketPreviousClose", None)
+        last = inf.get("regularMarketPrice"); prev = inf.get("regularMarketPreviousClose")
         if last is not None:
-            ch = (float(last) - float(prev)) if prev is not None else None
-            return float(last), ch
-    except Exception:
-        pass
-    # 3) historial
+            return float(last), (float(last)-float(prev)) if prev is not None else None
+    except: pass
     try:
         d = yf.Ticker(sym).history(period="10d", interval="1d")
-        if d is None or d.empty:
-            return None, None
-        c = d["Close"].dropna()
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2]) if c.shape[0] >= 2 else None
-        ch = (last - prev) if prev is not None else None
-        return last, ch
-    except Exception:
-        return None, None
+        if d is None or d.empty: return None, None
+        c = d["Close"].dropna(); last = float(c.iloc[-1]); prev = float(c.iloc[-2]) if c.shape[0]>=2 else None
+        return last, (last-prev) if prev is not None else None
+    except: return None, None
 
-items = []
-for name, sym in COMPANIES_USD:
-    last, chg = quote_last_and_change(sym)
-    if last is None:
-        continue  # omitir tickers sin datos
+items=[]
+for name,sym in COMPANIES_USD:
+    last,chg=quote_last_and_change(sym)
+    if last is None: continue
     if chg is None:
         items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
-        cls = "up" if chg >= 0 else "down"
-        arr = "▲" if chg >= 0 else "▼"
+        cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
-
-ticker_line = "".join(items)
-st.markdown(
-    f"""
-    <div class='tape'>
-      <div class='tape-track'>
-        <div class='tape-group'>{ticker_line}</div>
-        <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+ticker_line="".join(items)
+st.markdown(f"""
+<div class='tape'><div class='tape-track'>
+  <div class='tape-group'>{ticker_line}</div>
+  <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
+</div></div>
+""", unsafe_allow_html=True)
 
 # ==================== FX & FUTUROS (Yahoo) ====================
 @st.cache_data(ttl=75)
 def get_yahoo(sym: str):
     return quote_last_and_change(sym)
 
-fx, fx_chg = get_yahoo("MXN=X")  # USD/MXN (cuántos MXN por 1 USD)
-lc, lc_chg = get_yahoo("LE=F")   # Live Cattle (USD/100 lb)
-lh, lh_chg = get_yahoo("HE=F")   # Lean Hogs (USD/100 lb)
+fx, fx_chg = get_yahoo("MXN=X")
+lc, lc_chg = get_yahoo("LE=F")
+lh, lh_chg = get_yahoo("HE=F")
 
-def kpi_fx(title: str, value: float | None, chg: float | None) -> str:
+def kpi_fx(title, value, chg):
     if value is None:
-        val_html = "<div class='big'>N/D</div>"
-        delta_html = ""
+        val_html = "<div class='big'>N/D</div>"; delta_html=""
     else:
         val_html = f"<div class='big'>{fmt4(value)}</div>"
-        if chg is None:
-            delta_html = ""
+        if chg is None: delta_html=""
         else:
-            cls = "up" if chg >= 0 else "down"
-            arr = "▲" if chg >= 0 else "▼"
-            delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return f"""
-    <div class="card">
-      <div class="kpi">
-        <div><div class="title">{title}</div>{val_html}</div>{delta_html}
-      </div>
-    </div>
-    """
+            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
+            delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+    return f"""<div class="card"><div class="kpi">
+      <div><div class="title">{title}</div>{val_html}</div>{delta_html}
+    </div></div>"""
 
-def kpi_cme(title: str, price: float | None, chg: float | None) -> str:
-    unit = "USD/100 lb"
+def kpi_cme(title, price, chg):
+    unit="USD/100 lb"
     if price is None:
-        price_html = f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"
-        delta_html = ""
+        price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta_html=""
     else:
-        price_html = f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
-        if chg is None:
-            delta_html = ""
+        price_html=f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
+        if chg is None: delta_html=""
         else:
-            cls = "up" if chg >= 0 else "down"
-            arr = "▲" if chg >= 0 else "▼"
-            delta_html = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return f"""
-    <div class="card">
-      <div class="kpi">
-        <div><div class="title">{title}</div>{price_html}</div>{delta_html}
-      </div>
-    </div>
-    """
+            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
+            delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+    return f"""<div class="card"><div class="kpi">
+      <div><div class="title">{title}</div>{price_html}</div>{delta_html}
+    </div></div>"""
 
 st.markdown("<div class='grid'>", unsafe_allow_html=True)
 st.markdown(kpi_fx("USD/MXN", fx, fx_chg), unsafe_allow_html=True)
@@ -242,182 +191,254 @@ st.markdown(kpi_cme("Res en pie", lc, lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie", lh, lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== USDA POULTRY (solo B/S y T/S) ====================
-# Intentamos múltiples endpoints conocidos (variantes de nombre y reporte diario).
-POULTRY_URLS = [
-    # Reporte clásico de partes (texto plano)
-    "https://www.ams.usda.gov/mnreports/aj_py018.txt",
-    "https://www.ams.usda.gov/mnreports/AJ_PY018.txt",
-    "https://www.ams.usda.gov/mnreports/py018.txt",
-    "https://www.ams.usda.gov/mnreports/PY018.txt",
-    # Variantes comunes del daily composite de partes (por si lo publican como TXT)
-    "https://www.ams.usda.gov/mnreports/jk_py001.txt",
-    "https://www.ams.usda.gov/mnreports/JK_PY001.txt",
-]
-HDR = {"User-Agent": "Mozilla/5.0"}
+# ==================== IA opcional ====================
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
-PECH_PATTERNS = {
-    "Pechuga B/S": [r"BREAST\s*-\s*B/?S(?!.*JUMBO)", r"BREAST,\s*B/?S(?!.*JUMBO)"],
-    "Pechuga T/S (strapless)": [r"BREAST\s*T/?S", r"STRAPLESS"],
-}
-
-def _extract_avg(U: str) -> float | None:
-    # 1) Weighted Avg
-    m = re.search(r"(?:WT?D|WEIGHTED)\s*AVG\.?\s*(\d+(?:\.\d+)?)", U)
-    if m:
-        try:
-            return float(m.group(1))
-        except:
-            pass
-    # 2) Rango A - B -> promedio
-    m2 = re.search(r"(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)", U)
-    if m2:
-        try:
-            return (float(m2.group(1)) + float(m2.group(2))) / 2.0
-        except:
-            pass
-    # 3) Último número de la línea como fallback
-    nums = re.findall(r"(\d+(?:\.\d+)?)", U)
-    if nums:
-        try:
-            return float(nums[-1])
-        except:
-            return None
-    return None
-
-@st.cache_data(ttl=1800)
-def fetch_usda_pechugas() -> dict:
-    for url in POULTRY_URLS:
-        try:
-            r = requests.get(url, timeout=12, headers=HDR)
-            if r.status_code != 200:
-                continue
-            txt = r.text
-            if "<html" in txt.lower():
-                # Si es HTML (redirección/página), lo omitimos
-                continue
-            lines = [ln.strip() for ln in txt.splitlines() if ln.strip()]
-            out = {}
-            for disp, pats in PECH_PATTERNS.items():
-                for ln in lines:
-                    U = ln.upper()
-                    if any(re.search(p, U) for p in pats):
-                        v = _extract_avg(U)
-                        if v is not None:
-                            out[disp] = v
-                            break
-            if out:
-                return out
-        except Exception:
-            continue
-    return {}
-
-SNAP = "poultry_last_minimal.json"
-
-def load_snap() -> dict:
-    if not os.path.exists(SNAP):
-        return {}
+def ai_summarize_health(groups):
+    """groups: {country:[{title, url, datetime, species, severity}]}"""
+    if not OPENAI_API_KEY:
+        out={}
+        for c,items in groups.items():
+            bullets=[]
+            for it in items[:2]:
+                t=it.get("title","").strip()
+                sev=it.get("severity","amb")
+                s = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
+                when = it.get("when_txt","")
+                src = it.get("domain","")
+                species = it.get("species","")
+                bullets.append(f"{s} {species} — {t} ({src} · {when})")
+            out[c]=bullets
+        return out
     try:
-        with open(SNAP, "r") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-def save_snap(data: dict):
-    try:
-        with open(SNAP, "w") as f:
-            json.dump({k: float(v) for k, v in data.items()}, f)
-    except Exception:
-        pass
-
-def get_pechugas_with_snapshot():
-    cur = fetch_usda_pechugas()
-    prev = load_snap()
-    seeded = False
-    if cur:
-        res = {}
-        for k, v in cur.items():
-            pv = prev.get(k, None)
-            if isinstance(pv, dict):
-                pv = pv.get("price")
-            dlt = 0.0 if pv is None else (float(v) - float(pv))
-            res[k] = {"price": float(v), "delta": float(dlt)}
-        save_snap(cur)
-        if not prev:
-            seeded = True
-        return res, False, seeded
-    if prev:
-        res = {
-            k: {"price": float((v.get("price") if isinstance(v, dict) else v)), "delta": 0.0}
-            for k, v in prev.items()
+        sys = (
+            "Eres un analista sanitario agropecuario. Resume en español, "
+            "sin inventar datos. Máx 2 bullets por país. Incluye especie, acción/estado, "
+            "y fuente+edad (ej. 'hace 2 h'). Si no hay severidad alta, usa 🟢."
+        )
+        user_parts=[]
+        for c,items in groups.items():
+            for it in items[:4]:
+                user_parts.append({
+                    "country": c,
+                    "title": it.get("title",""),
+                    "species": it.get("species",""),
+                    "severity": it.get("severity","amb"),
+                    "when": it.get("when_txt",""),
+                    "source": it.get("domain",""),
+                })
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role":"system","content":sys},
+                {"role":"user","content": json.dumps(user_parts, ensure_ascii=False)}
+            ],
+            "temperature": 0.2,
+            "response_format": {"type":"json_object"}
         }
-        return res, True, False
-    # Primera corrida sin snapshot ni fetch
-    return {k: {"price": None, "delta": 0.0} for k in PECH_PATTERNS.keys()}, True, False
+        r = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type":"application/json"},
+            json=payload, timeout=15
+        )
+        j = r.json()
+        txt = j["choices"][0]["message"]["content"]
+        data = json.loads(txt)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return ai_summarize_health({k:v for k,v in groups.items() if v})
 
-pech, stale, seeded = get_pechugas_with_snapshot()
+def ai_summarize_metrics(items):
+    if not OPENAI_API_KEY:
+        return items
+    try:
+        sys = ("Eres un editor financiero. Devuelve una lista JSON de objetos "
+               "{num, sub, badge}. No inventes. num breve (ej '+6.7%' o '$7,837M'). sub con país/periodo.")
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {"role":"system","content":sys},
+                {"role":"user","content": json.dumps(items, ensure_ascii=False)}
+            ],
+            "temperature": 0.2,
+            "response_format": {"type":"json_object"}
+        }
+        r = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type":"application/json"},
+            json=payload, timeout=15
+        )
+        out = r.json()["choices"][0]["message"]["content"]
+        data = json.loads(out)
+        if isinstance(data, list): return data
+        if isinstance(data, dict) and "items" in data and isinstance(data["items"], list):
+            return data["items"]
+        return items
+    except Exception:
+        return items
 
-order = ["Pechuga B/S", "Pechuga T/S (strapless)"]
-rows = []
-for name in order:
-    it = pech.get(name, {"price": None, "delta": 0.0})
-    price, delta = it["price"], it["delta"]
-    cls = "up" if (delta or 0) >= 0 else "down"
-    arr = "▲" if (delta or 0) >= 0 else "▼"
-    price_txt = fmt2(price) if price is not None else "—"
-    delta_txt = f"{arr} {fmt2(abs(delta))}" if price is not None else "—"
-    rows.append(
-        f"<tr><td>{name}</td>"
-        f"<td><span class='price-lg'>{price_txt} <span class='unit-inline--p'>USD/lb</span></span> "
-        f"<span class='price-delta {cls}'>{delta_txt}</span></td></tr>"
-    )
+# ==================== GDELT Fetchers ====================
+GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
+COMMON_HEADERS = {"User-Agent":"Mozilla/5.0"}
 
-badge = " <span class='badge'>último disponible</span>" if stale else (
-    " <span class='badge'>actualizado</span>" if seeded else "")
+DISEASE_Q = "(avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)"
+COUNTRY_MAP = {"US":"Estados Unidos","BR":"Brasil","MX":"México"}
 
-st.markdown(
-    f"""
-<div class="card pechugas">
-  <div class="title" style="color:var(--txt);margin:12px 14px 6px 14px">
-    Piezas de Pollo, U.S. National (USDA){badge}
-  </div>
-  <table>
-    <thead><tr><th>Producto</th><th>Precio</th></tr></thead>
-    <tbody>{''.join(rows)}</tbody>
-  </table>
-</div>
-""",
-    unsafe_allow_html=True,
-)
-
-# ==================== NOTICIAS (cinta inferior) ====================
-noticias = [
-  "MXN/Kg y logística.",
-  "Pechuga B/S y T/S estables; revisar spreads USD/lb → MXN/kg y logística.",
-  "USDA: beef cutout estable; cortes medios firmes; demanda retail moderada.",
-  "USMEF: exportaciones de cerdo a México firmes; hams sostienen volumen."
+SPECIES_REGEX = [
+    (r"\b(pollo|aves|broiler|chicken)\b", "Pollo"),
+    (r"\b(pavo|turkey)\b", "Pavo"),
+    (r"\b(cerdo|swine|hog|pork)\b", "Cerdo"),
+    (r"\b(res|bovine|cattle)\b", "Res"),
 ]
-k = int(time.time() // 30) % len(noticias)
-news_text = noticias[k]
-st.markdown(
-    f"""
-    <div class='tape-news'>
-      <div class='tape-news-track'>
-        <div class='tape-news-group'><span class='item'>{news_text}</span></div>
-        <div class='tape-news-group' aria-hidden='true'><span class='item'>{news_text}</span></div>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+
+def detect_species(text:str)->str:
+    u = text.lower()
+    for pat,label in SPECIES_REGEX:
+        if re.search(pat, u): return label
+    return "Ganado"
+
+def severity_from_title(t:str)->str:
+    u = t.lower()
+    hard = any(k in u for k in ["confirmed","confirmado","quarantine","cuarentena","culling","sacrificio","outbreak","brote","emergency"])
+    med  = any(k in u for k in ["detected","detección","suspected","sospecha","cases","casos","alert"])
+    if hard: return "red"
+    if med:  return "amb"
+    return "green"
+
+@st.cache_data(ttl=600)
+def gdelt_search(country_code:str, timespan="10d", maxrecords=40):
+    try:
+        params = {
+            "query": f"{DISEASE_Q} sourcecountry:{country_code}",
+            "mode": "ArtList",
+            "format": "json",
+            "timespan": timespan,
+            "maxrecords": str(maxrecords)
+        }
+        r = requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=12)
+        if r.status_code != 200: return []
+        j = r.json()
+        arts = j.get("articles", []) or []
+        out=[]
+        now = dt.datetime.utcnow()
+        for a in arts:
+            title = a.get("title","").strip()
+            url   = a.get("url","")
+            dom   = a.get("domain","")
+            seen  = a.get("seendate","")  # 'YYYYMMDDHHMMSS'
+            when_txt = ""
+            try:
+                d = dt.datetime.strptime(seen, "%Y%m%d%H%M%S")
+                minutes = (now - d).total_seconds()/60.0
+                when_txt = humanize_delta(minutes)
+            except Exception:
+                pass
+            species = detect_species(title)
+            sev = severity_from_title(title)
+            out.append({"title":title,"url":url,"domain":dom,"when_txt":when_txt,"species":species,"severity":sev})
+        return out[:maxrecords]
+    except Exception:
+        return []
+
+# ==================== KPI: Livestock Health Watch ====================
+def order_items(items):
+    rank={"red":0,"amb":1,"green":2}
+    return sorted(items, key=lambda x: rank.get(x.get("severity","amb"),1))
+
+US_items = order_items(gdelt_search("US"))[:6]
+BR_items = order_items(gdelt_search("BR"))[:6]
+MX_items = order_items(gdelt_search("MX"))[:6]
+
+groups = {"US": US_items, "BR": BR_items, "MX": MX_items}
+summ = ai_summarize_health(groups)
+
+st.markdown("<div class='card'><div class='kpi'><div class='title'>Livestock Health Watch</div></div></div>", unsafe_allow_html=True)
+st.markdown("<div class='hw-grid'>", unsafe_allow_html=True)
+for cc in ["US","BR","MX"]:
+    bullets = summ.get(cc, [])
+    country_name = COUNTRY_MAP.get(cc, cc)
+    st.markdown(f"<div class='hw-col'><div class='hw-title'>{country_name}</div>", unsafe_allow_html=True)
+    if bullets:
+        for b in bullets[:2]:
+            color = "amb"
+            if "🔴" in b: color="red"
+            elif "🟢" in b: color="green"
+            st.markdown(f"<div class='hw-item'><span class='dot {color}'></span>{b}</div>", unsafe_allow_html=True)
+    else:
+        st.markdown("<div class='hw-item'><span class='dot green'></span>Sin novedades significativas (última revisión reciente).</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
+
+# ==================== KPI: Frozen Meat Industry Monitor ====================
+@st.cache_data(ttl=300)
+def pct_30d(sym:str):
+    try:
+        d = yf.Ticker(sym).history(period="45d", interval="1d")
+        if d is None or d.empty or d["Close"].dropna().shape[0] < 5:
+            return None
+        c = d["Close"].dropna()
+        last = float(c.iloc[-1]); prev = float(c.iloc[0])
+        return (last/prev - 1.0) * 100.0
+    except Exception:
+        return None
+
+live_signals = []
+for label, sym in [("Res (LE=F)", "LE=F"), ("Cerdo (HE=F)","HE=F"), ("USD/MXN", "MXN=X"), ("Maíz (ZC=F)","ZC=F")]:
+    p = pct_30d(sym)
+    if p is not None:
+        sgn = "▲" if p>=0 else "▼"
+        live_signals.append({"num": f"{p:+.1f}%", "sub": f"{label} · cambio 30D {sgn}", "badge":"mercado vivo"})
+
+@st.cache_data(ttl=43200)
+def gdelt_numbers(query:str, timespan="30d", maxrecords=30):
+    try:
+        r = requests.get(GDELT_DOC, params={
+            "query": query, "mode":"ArtList", "format":"json",
+            "timespan": timespan, "maxrecords": str(maxrecords)
+        }, headers=COMMON_HEADERS, timeout=12)
+        if r.status_code != 200: return []
+        arts = (r.json() or {}).get("articles", []) or []
+        out=[]
+        for a in arts:
+            t = a.get("title","")
+            m_pct = re.search(r"([+-]?\d{1,2}(?:\.\d+)?\s?%)", t)
+            m_usd = re.search(r"\$[\d,]+(\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
+            if not (m_pct or m_usd): 
+                continue
+            num = m_pct.group(1) if m_pct else m_usd.group(0)
+            dom = a.get("domain","")
+            out.append({"num": num, "sub": t, "badge": dom})
+        return out[:8]
+    except Exception:
+        return []
+
+news_metrics = []
+news_metrics += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
+news_metrics += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
+news_metrics += gdelt_numbers("(frozen%20chicken%20market%20growth%20OR%20frozen%20poultry%20market)")
+news_metrics += gdelt_numbers("(Mexico%20chicken%20imports%20OR%20México%20importaciones%20pollo)")
+
+items_im = (live_signals[:4] + news_metrics[:4])[:3]
+items_im = ai_summarize_metrics(items_im)
+
+st.markdown("<div class='card im-card'><div class='im-wrap'>", unsafe_allow_html=True)
+if not items_im:
+    st.markdown("<div class='im-item' style='opacity:1'><div class='im-num'>—</div><div class='im-sub'>Sin datos recientes</div></div>", unsafe_allow_html=True)
+else:
+    for it in items_im[:3]:
+        num = it.get("num","—")
+        sub = it.get("sub","")
+        badge = it.get("badge","")
+        extra = f" <span class='im-badge'>{badge}</span>" if badge else ""
+        st.markdown(f"<div class='im-item'><div class='im-num'>{num}</div><div class='im-sub'>{sub}{extra}</div></div>", unsafe_allow_html=True)
+st.markdown("</div></div>", unsafe_allow_html=True)
 
 # ==================== PIE ====================
 st.markdown(
     f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · "
-    "Auto-refresh 60s · Fuentes: USDA · USMEF · Yahoo Finance (~15 min retraso).</div>",
+    "Fuentes: Yahoo Finance (~15 min), GDELT (prensa global). IA opcional con OPENAI_API_KEY.</div>",
     unsafe_allow_html=True,
 )
 
-# Refresco hands-free compatible con 1.36
 time.sleep(60)
 st.rerun()
