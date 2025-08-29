@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.1.4 (IM centrado real y espaciado simétrico)
+# LaSultana Meat Index — v2.1.5 (IM gap corto + centrado fino)
 import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -45,7 +45,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 /* === Sección inferior a DOS columnas fijas === */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
-@media (max-width:1100px){ .sec-grid{grid-template-columns:1fr} }
+@media (max-width:1100px){ .sec-grid{grid-template-columns:1fr } }
 
 /* Livestock Health Watch */
 .hw-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
@@ -58,19 +58,19 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Frozen Meat Industry Monitor (centrado + espaciado simétrico) */
-.im-card{min-height:220px}
+/* Frozen Meat Industry Monitor (gap corto + centrado real) */
+.im-card{min-height:200px}
 .im-wrap{
-  position:relative;height:190px;overflow:hidden;width:100%;
-  display:flex;align-items:center;justify-content:center; /* centro real */
+  position:relative;height:168px;overflow:hidden;width:100%;
+  display:flex;align-items:center;justify-content:center;
+  transform: translateY(6px); /* pequeño ajuste hacia abajo para centrar visualmente */
 }
 .im-item{
-  position:absolute;left:0;right:0;top:0;opacity:0;
-  height:100%;
+  position:absolute;left:0;right:0;top:0;opacity:0;height:100%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:14px;            /* misma distancia entre núm ↔ sub ↔ desc */
+  gap:8px;               /* menos espacio arriba/abajo del subtítulo */
   padding:0 10px;
-  animation:fadeSlot 30s linear infinite;will-change:opacity,transform
+  animation:fadeSlot 30s linear infinite;will-change:opacity,transform;
 }
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:10s}
@@ -81,15 +81,15 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   36%  {opacity:0; transform:translateY(-6px)}
   100% {opacity:0}
 }
-.im-num{font-size:66px;font-weight:900;letter-spacing:.3px;line-height:1;text-align:center}
-.im-sub{font-size:22px;color:var(--muted);text-align:center;margin:0}   /* sin empuje extra */
-.im-desc{font-size:18px;color:#8fb7d5;text-align:center;margin:0}       /* sin empuje extra */
+.im-num{font-size:64px;font-weight:900;letter-spacing:.3px;line-height:1;text-align:center}
+.im-sub{font-size:22px;color:var(--muted);text-align:center;margin:0}
+.im-desc{font-size:18px;color:#8fb7d5;text-align:center;margin:0}
 
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== HELPERS ====================
+# ====================== HELPERS ======================
 def fmt2(x):
     if x is None: return "—"
     s=f"{x:,.2f}"
@@ -105,8 +105,7 @@ def humanize_delta(minutes: float) -> str:
     if minutes < 60: return f"hace {int(minutes)} min"
     hours = minutes/60
     if hours < 24: return f"hace {int(hours)} h"
-    days = int(hours//24)
-    return f"hace {days} d"
+    days = int(hours//24); return f"hace {days} d"
 
 @st.cache_data(ttl=75)
 def quote_last_and_change(sym:str):
@@ -127,33 +126,30 @@ def quote_last_and_change(sym:str):
     try:
         d=yf.Ticker(sym).history(period="10d", interval="1d")
         if d is None or d.empty: return None, None
-        c=d["Close"].dropna()
-        last=float(c.iloc[-1]); prev=float(c.iloc[-2]) if c.shape[0]>=2 else None
+        c=d["Close"].dropna(); last=float(c.iloc[-1]); prev=float(c.iloc[-2]) if c.shape[0]>=2 else None
         ch=(last-prev) if prev is not None else None
         return last, ch
-    except:
-        return None, None
+    except: return None, None
 
 @st.cache_data(ttl=300)
 def pct_change_n_days(sym: str, days: int = 30) -> float | None:
     try:
-        d = yf.Ticker(sym).history(period=f"{max(days+15, 40)}d", interval="1d")
+        d = yf.Ticker(sym).history(period=f"{max(days+15,40)}d", interval="1d")
         if d is None or d.empty: return None
         c = d["Close"].dropna()
         if c.shape[0] < days+1: return None
         last = float(c.iloc[-1]); prev = float(c.iloc[-(days+1)])
         if prev == 0: return None
         return (last/prev - 1.0) * 100.0
-    except Exception:
-        return None
+    except: return None
 
-# ==================== LOGO ====================
+# ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if os.path.exists("ILSMeatIndex.png"):
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR ====================
+# ====================== CINTA SUPERIOR ======================
 COMPANIES_USD=[("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
                ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
                ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
@@ -170,15 +166,14 @@ for name,sym in COMPANIES_USD:
         cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
 
-ticker_line="".join(items)
 st.markdown(f"""
 <div class='tape'><div class='tape-track'>
-  <div class='tape-group'>{ticker_line}</div>
-  <div class='tape-group' aria-hidden='true'>{ticker_line}</div>
+  <div class='tape-group'>{"".join(items)}</div>
+  <div class='tape-group' aria-hidden='true'>{"".join(items)}</div>
 </div></div>
 """, unsafe_allow_html=True)
 
-# ==================== FX & FUTUROS ====================
+# ====================== FX & FUTUROS ======================
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
@@ -215,7 +210,7 @@ st.markdown(kpi_cme("Res en pie",lc,lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie",lh,lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== IA opcional (para Health Watch) ====================
+# ====================== IA opcional (Health Watch) ======================
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
@@ -246,7 +241,7 @@ def ai_health(groups):
     except Exception:
         return fallback()
 
-# ==================== GDELT (Health Watch) ====================
+# ====================== GDELT (Health Watch) ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
@@ -300,7 +295,7 @@ def gdelt_search(cc:str, timespan="30d", maxrecords=50):
     except Exception:
         return []
 
-# ==================== SECCIÓN INFERIOR (2 COLUMNAS) ====================
+# ====================== SECCIÓN INFERIOR (2 COLUMNAS) ======================
 US_items=gdelt_search("US"); BR_items=gdelt_search("BR"); MX_items=gdelt_search("MX")
 counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
 groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
@@ -319,7 +314,7 @@ while len(live_signals) < 3:
     live_signals += live_signals
 
 # Izquierda: Health Watch
-hw_html = []
+hw_html=[]
 hw_html.append(
     f"<div class='hw-head'><div class='hw-title'>Livestock Health Watch</div>"
     f"<div class='hw-badges'><span class='tag'>US {counts['US']}</span>"
@@ -340,7 +335,7 @@ for cc in ["US","BR","MX"]:
 hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
-# Derecha: Industry Monitor (rotador 3 slots, centrado)
+# Derecha: Industry Monitor (rotador 3 slots) — ya centrado y con gap corto
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in live_signals[:3]:
     num=it.get("num","—"); sub=it.get("sub","")
@@ -356,13 +351,13 @@ im_html_str="".join(im_html)
 
 st.markdown(f"<div class='sec-grid'><div class='card'>{hw_html_str}</div>{im_html_str}</div>", unsafe_allow_html=True)
 
-# ==================== PIE ====================
+# ====================== PIE ======================
 st.markdown(
     f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · "
     "Fuentes: Yahoo Finance (~15 min), GDELT (prensa global). IA opcional con OPENAI_API_KEY.</div>",
     unsafe_allow_html=True,
 )
 
-# ==================== REFRESCO ====================
+# ====================== REFRESCO ======================
 time.sleep(60)
 st.rerun()
