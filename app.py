@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.1.1 (2 columnas fijas: Health Watch + Industry Monitor)
+# LaSultana Meat Index — v2.1.2 (IM centrado y tipografías grandes)
 import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -58,10 +58,18 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Frozen Meat Industry Monitor (rotador 3 slots, 10s c/u) */
-.im-card{min-height:190px}
-.im-wrap{position:relative;height:150px;overflow:hidden;width:100%}
-.im-item{position:absolute;left:0;right:0;top:0;opacity:0;animation:fadeSlot 30s linear infinite;will-change:opacity,transform}
+/* Frozen Meat Industry Monitor (centrado + grande) */
+.im-card{min-height:210px}
+.im-wrap{
+  position:relative;height:180px;overflow:hidden;width:100%;
+}
+.im-item{
+  position:absolute;left:0;right:0;top:0;opacity:0;
+  height:100%;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:6px 10px;
+  animation:fadeSlot 30s linear infinite;will-change:opacity,transform
+}
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:10s}
 .im-item:nth-child(3){animation-delay:20s}
@@ -71,9 +79,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   36%  {opacity:0; transform:translateY(-6px)}
   100% {opacity:0}
 }
-.im-num{font-size:56px;font-weight:900;letter-spacing:.3px;margin-bottom:10px;text-align:center;line-height:1;color:var(--txt)}
-.im-sub{font-size:18px;color:var(--muted);text-align:center}
-.im-desc{font-size:14px;color:#8fb7d5;text-align:center;margin-top:8px}
+.im-num{font-size:72px;font-weight:900;letter-spacing:.3px;line-height:1;color:var(--txt);text-align:center}
+.im-sub{font-size:22px;color:var(--muted);margin-top:6px;text-align:center}
+.im-desc{font-size:16px;color:#8fb7d5;text-align:center;margin-top:10px}
 .im-badge{display:inline-block;margin-left:8px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px}
 
 .caption{color:var(--muted)!important;margin-top:8px}
@@ -210,7 +218,6 @@ st.markdown("</div>", unsafe_allow_html=True)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
-    # Fallback (sin IA) — bullets simples por país
     def fallback():
         out={}
         for c,its in groups.items():
@@ -220,7 +227,6 @@ def ai_health(groups):
                 bullets.append(f"{s} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
             out[c]=bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
         return out
-
     if not OPENAI_API_KEY: return fallback()
     try:
         payload={"model":"gpt-4o-mini",
@@ -259,7 +265,7 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ==================== GDELT (brotes/enfermedades) ====================
+# ==================== GDELT ====================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
@@ -320,7 +326,6 @@ counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
 groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
 summary=ai_health(groups)
 
-# Señales para Industry Monitor (30D)
 sig_fx = pct_change_n_days("MXN=X", 30)
 sig_lc = pct_change_n_days("LE=F", 30)
 sig_lh = pct_change_n_days("HE=F", 30)
@@ -334,7 +339,7 @@ live_signals = ai_metrics(live_signals)
 while len(live_signals) < 3:
     live_signals += live_signals
 
-# Render Health Watch (izquierda)
+# Izquierda: Health Watch
 hw_html = []
 hw_html.append(
     f"<div class='hw-head'><div class='hw-title'>Livestock Health Watch</div>"
@@ -356,18 +361,21 @@ for cc in ["US","BR","MX"]:
 hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
-# Render Industry Monitor (derecha)
+# Derecha: Industry Monitor (rotador 3 slots)
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in live_signals[:3]:
     num=it.get("num","—"); sub=it.get("sub",""); badge=it.get("badge","")
     extra=f" <span class='im-badge'>{badge}</span>" if badge else ""
-    im_html.append(f"<div class='im-item'><div class='im-num'>{num}</div>"
-                   f"<div class='im-sub'>{sub}{extra}</div>"
-                   f"<div class='im-desc'>Variación de cierre a cierre en los últimos 30 días (Yahoo Finance).</div></div>")
+    im_html.append(
+        f"<div class='im-item'>"
+        f"<div class='im-num'>{num}</div>"
+        f"<div class='im-sub'>{sub}{extra}</div>"
+        f"<div class='im-desc'>Variación de cierre a cierre en los últimos 30 días (Yahoo Finance).</div>"
+        f"</div>"
+    )
 im_html.append("</div></div>")
 im_html_str="".join(im_html)
 
-# CONTENEDOR 2 COLUMNAS (izq = HW, der = IM)
 st.markdown(f"<div class='sec-grid'><div class='card'>{hw_html_str}</div>{im_html_str}</div>", unsafe_allow_html=True)
 
 # ==================== PIE ====================
