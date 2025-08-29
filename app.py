@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.1.3 (IM centrado, sin "mercado vivo", tamaños finos)
+# LaSultana Meat Index — v2.1.4 (IM centrado real y espaciado simétrico)
 import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -58,15 +58,17 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Frozen Meat Industry Monitor (centrado + tamaños ajustados) */
-.im-card{min-height:210px}
+/* Frozen Meat Industry Monitor (centrado + espaciado simétrico) */
+.im-card{min-height:220px}
 .im-wrap{
-  position:relative;height:180px;overflow:hidden;width:100%;
+  position:relative;height:190px;overflow:hidden;width:100%;
+  display:flex;align-items:center;justify-content:center; /* centro real */
 }
 .im-item{
   position:absolute;left:0;right:0;top:0;opacity:0;
   height:100%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;            /* misma distancia entre núm ↔ sub ↔ desc */
   padding:0 10px;
   animation:fadeSlot 30s linear infinite;will-change:opacity,transform
 }
@@ -79,9 +81,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   36%  {opacity:0; transform:translateY(-6px)}
   100% {opacity:0}
 }
-.im-num{font-size:66px;font-weight:900;letter-spacing:.3px;line-height:1;color:var(--txt);text-align:center}
-.im-sub{font-size:22px;color:var(--muted);margin-top:6px;text-align:center}
-.im-desc{font-size:18px;color:#8fb7d5;text-align:center;margin-top:10px}
+.im-num{font-size:66px;font-weight:900;letter-spacing:.3px;line-height:1;text-align:center}
+.im-sub{font-size:22px;color:var(--muted);text-align:center;margin:0}   /* sin empuje extra */
+.im-desc{font-size:18px;color:#8fb7d5;text-align:center;margin:0}       /* sin empuje extra */
 
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
@@ -304,7 +306,6 @@ counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
 groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
 summary=ai_health(groups)
 
-# Señales del monitor (sin badge/etiquetas adicionales)
 sig_fx = pct_change_n_days("MXN=X", 30)
 sig_lc = pct_change_n_days("LE=F", 30)
 sig_lh = pct_change_n_days("HE=F", 30)
