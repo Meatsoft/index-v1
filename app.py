@@ -1,9 +1,9 @@
-# LaSultana Meat Index — v1 con:
+# LaSultana Meat Index — v2
 # - Cinta bursátil (yfinance)
-# - USD/MXN, Res (LE=F), Cerdo (HE=F) (yfinance)
-# - KPI: Livestock Health Watch (US/BR/MX) — GDELT JSON + IA opcional (OPENAI_API_KEY)
-# - KPI: Frozen Meat Industry Monitor — señales reales + rotador con fade
-# - Sin cinta inferior; sin autorefresh (anti-parpadeo)
+# - USD/MXN + Res (LE=F) + Cerdo (HE=F) (yfinance)
+# - Livestock Health Watch (US/BR/MX) → GDELT + IA opcional (OPENAI_API_KEY)
+# - Frozen Meat Industry Monitor → señales reales (yfinance) + números de prensa (GDELT)
+# - Sin cinta inferior; con placeholders si no hay datos
 
 import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
@@ -48,17 +48,18 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* Health Watch */
+.hw-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.hw-badges .tag{display:inline-block;margin-left:6px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px}
 .hw-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .hw-col{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .hw-title{font-size:16px;color:var(--muted);margin-bottom:8px}
 .hw-item{margin:8px 0;padding:8px 10px;border:1px solid var(--line);border-radius:10px}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
-.hw-meta{color:var(--muted);font-size:12px;margin-top:4px}
 
 /* Industry Monitor (rotador) */
 .im-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;min-height:110px;display:flex;align-items:center;justify-content:center}
-.im-wrap{position:relative;height:90px;overflow:hidden}
+.im-wrap{position:relative;height:90px;overflow:hidden;width:100%}
 .im-item{position:absolute;left:0;right:0;top:0;opacity:0;animation:fade 12s linear infinite}
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:4s}
@@ -195,84 +196,58 @@ st.markdown("</div>", unsafe_allow_html=True)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "").strip()
 
 def ai_summarize_health(groups):
-    """groups: {country:[{title, url, datetime, species, severity}]}"""
-    if not OPENAI_API_KEY:
+    """groups: {country:[{title, url, datetime, species, severity, when_txt, domain}]}"""
+    # Fallback determinista: siempre devolver algo (no bloquea UI)
+    def fallback():
         out={}
         for c,items in groups.items():
             bullets=[]
             for it in items[:2]:
-                t=it.get("title","").strip()
-                sev=it.get("severity","amb")
-                s = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
-                when = it.get("when_txt","")
-                src = it.get("domain","")
-                species = it.get("species","")
-                bullets.append(f"{s} {species} — {t} ({src} · {when})")
+                s = "🔴" if it.get("severity")=="red" else ("🟠" if it.get("severity")=="amb" else "🟢")
+                bullets.append(f"{s} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
             out[c]=bullets
         return out
+    if not OPENAI_API_KEY: return fallback()
     try:
-        sys = (
-            "Eres un analista sanitario agropecuario. Resume en español, "
-            "sin inventar datos. Máx 2 bullets por país. Incluye especie, acción/estado, "
-            "y fuente+edad (ej. 'hace 2 h'). Si no hay severidad alta, usa 🟢."
-        )
-        user_parts=[]
-        for c,items in groups.items():
-            for it in items[:4]:
-                user_parts.append({
-                    "country": c,
-                    "title": it.get("title",""),
-                    "species": it.get("species",""),
-                    "severity": it.get("severity","amb"),
-                    "when": it.get("when_txt",""),
-                    "source": it.get("domain",""),
-                })
+        sys = ("Eres analista sanitario agropecuario. Resume en español, "
+               "máx 2 bullets por país, sin inventar. Incluye especie, acción y fuente+antigüedad.")
         payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
+            "model":"gpt-4o-mini",
+            "messages":[
                 {"role":"system","content":sys},
-                {"role":"user","content": json.dumps(user_parts, ensure_ascii=False)}
+                {"role":"user","content": json.dumps(groups, ensure_ascii=False)}
             ],
-            "temperature": 0.2,
-            "response_format": {"type":"json_object"}
+            "temperature":0.2,
+            "response_format":{"type":"json_object"}
         }
         r = requests.post(
             "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type":"application/json"},
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}","Content-Type":"application/json"},
             json=payload, timeout=15
         )
         j = r.json()
         txt = j["choices"][0]["message"]["content"]
         data = json.loads(txt)
-        return data if isinstance(data, dict) else {}
+        return data if isinstance(data, dict) else fallback()
     except Exception:
-        return ai_summarize_health({k:v for k,v in groups.items() if v})
+        return fallback()
 
 def ai_summarize_metrics(items):
-    if not OPENAI_API_KEY:
-        return items
+    if not OPENAI_API_KEY: return items
     try:
-        sys = ("Eres un editor financiero. Devuelve una lista JSON de objetos "
-               "{num, sub, badge}. No inventes. num breve (ej '+6.7%' o '$7,837M'). sub con país/periodo.")
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": [
-                {"role":"system","content":sys},
-                {"role":"user","content": json.dumps(items, ensure_ascii=False)}
-            ],
-            "temperature": 0.2,
-            "response_format": {"type":"json_object"}
+        sys=("Eres editor financiero. Devuelve lista JSON de objetos {num, sub, badge}. No inventes.")
+        payload={
+            "model":"gpt-4o-mini",
+            "messages":[{"role":"system","content":sys},{"role":"user","content":json.dumps(items, ensure_ascii=False)}],
+            "temperature":0.2,
+            "response_format":{"type":"json_object"}
         }
-        r = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type":"application/json"},
-            json=payload, timeout=15
-        )
-        out = r.json()["choices"][0]["message"]["content"]
-        data = json.loads(out)
-        if isinstance(data, list): return data
-        if isinstance(data, dict) and "items" in data and isinstance(data["items"], list):
-            return data["items"]
+        r=requests.post("https://api.openai.com/v1/chat/completions",
+                        headers={"Authorization": f"Bearer {OPENAI_API_KEY}","Content-Type":"application/json"},
+                        json=payload, timeout=15)
+        data=json.loads(r.json()["choices"][0]["message"]["content"])
+        if isinstance(data,list): return data
+        if isinstance(data,dict) and "items" in data and isinstance(data["items"],list): return data["items"]
         return items
     except Exception:
         return items
@@ -280,8 +255,8 @@ def ai_summarize_metrics(items):
 # ==================== GDELT Fetchers ====================
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS = {"User-Agent":"Mozilla/5.0"}
-
-DISEASE_Q = "(avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)"
+DISEASE_Q = ("(avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
+             "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
 COUNTRY_MAP = {"US":"Estados Unidos","BR":"Brasil","MX":"México"}
 
 SPECIES_REGEX = [
@@ -290,51 +265,44 @@ SPECIES_REGEX = [
     (r"\b(cerdo|swine|hog|pork)\b", "Cerdo"),
     (r"\b(res|bovine|cattle)\b", "Res"),
 ]
-
 def detect_species(text:str)->str:
-    u = text.lower()
+    u=text.lower()
     for pat,label in SPECIES_REGEX:
-        if re.search(pat, u): return label
+        if re.search(pat,u): return label
     return "Ganado"
 
 def severity_from_title(t:str)->str:
-    u = t.lower()
-    hard = any(k in u for k in ["confirmed","confirmado","quarantine","cuarentena","culling","sacrificio","outbreak","brote","emergency"])
-    med  = any(k in u for k in ["detected","detección","suspected","sospecha","cases","casos","alert"])
+    u=t.lower()
+    hard=any(k in u for k in ["confirmed","confirmado","quarantine","cuarentena","culling","sacrificio","outbreak","brote","emergency"])
+    med =any(k in u for k in ["detected","detección","suspected","sospecha","cases","casos","alert"])
     if hard: return "red"
     if med:  return "amb"
     return "green"
 
 @st.cache_data(ttl=600)
-def gdelt_search(country_code:str, timespan="10d", maxrecords=40):
+def gdelt_search(country_code:str, timespan="30d", maxrecords=50):
     try:
-        params = {
-            "query": f"{DISEASE_Q} sourcecountry:{country_code}",
-            "mode": "ArtList",
-            "format": "json",
-            "timespan": timespan,
-            "maxrecords": str(maxrecords)
-        }
-        r = requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=12)
-        if r.status_code != 200: return []
-        j = r.json()
-        arts = j.get("articles", []) or []
+        params={"query":f"{DISEASE_Q} sourcecountry:{country_code}",
+                "mode":"ArtList","format":"json","timespan":timespan,"maxrecords":str(maxrecords),"sort":"DateDesc"}
+        r=requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=12)
+        if r.status_code!=200: return []
+        j=r.json()
+        arts=j.get("articles",[]) or []
+        now=dt.datetime.utcnow()
         out=[]
-        now = dt.datetime.utcnow()
         for a in arts:
-            title = a.get("title","").strip()
-            url   = a.get("url","")
-            dom   = a.get("domain","")
-            seen  = a.get("seendate","")  # 'YYYYMMDDHHMMSS'
-            when_txt = ""
+            title=a.get("title","").strip()
+            if not title: continue
+            url=a.get("url",""); dom=a.get("domain","")
+            seen=a.get("seendate","")
+            when_txt=""
             try:
-                d = dt.datetime.strptime(seen, "%Y%m%d%H%M%S")
-                minutes = (now - d).total_seconds()/60.0
-                when_txt = humanize_delta(minutes)
-            except Exception:
-                pass
-            species = detect_species(title)
-            sev = severity_from_title(title)
+                d=dt.datetime.strptime(seen,"%Y%m%d%H%M%S")
+                minutes=(now-d).total_seconds()/60.0
+                when_txt=humanize_delta(minutes)
+            except: pass
+            species=detect_species(title)
+            sev=severity_from_title(title)
             out.append({"title":title,"url":url,"domain":dom,"when_txt":when_txt,"species":species,"severity":sev})
         return out[:maxrecords]
     except Exception:
@@ -345,22 +313,29 @@ def order_items(items):
     rank={"red":0,"amb":1,"green":2}
     return sorted(items, key=lambda x: rank.get(x.get("severity","amb"),1))
 
-US_items = order_items(gdelt_search("US"))[:6]
-BR_items = order_items(gdelt_search("BR"))[:6]
-MX_items = order_items(gdelt_search("MX"))[:6]
+US_items = order_items(gdelt_search("US"))
+BR_items = order_items(gdelt_search("BR"))
+MX_items = order_items(gdelt_search("MX"))
+counts = {"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
 
-groups = {"US": US_items, "BR": BR_items, "MX": MX_items}
-summ = ai_summarize_health(groups)
+groups_raw = {"US":US_items[:6], "BR":BR_items[:6], "MX":MX_items[:6]}
+summary = ai_summarize_health(groups_raw)
 
-st.markdown("<div class='card'><div class='kpi'><div class='title'>Livestock Health Watch</div></div></div>", unsafe_allow_html=True)
+st.markdown("<div class='card'>", unsafe_allow_html=True)
+st.markdown(
+    f"<div class='hw-head'><div class='title'>Livestock Health Watch</div>"
+    f"<div class='hw-badges'><span class='tag'>US {counts['US']}</span>"
+    f"<span class='tag'>BR {counts['BR']}</span><span class='tag'>MX {counts['MX']}</span></div></div>",
+    unsafe_allow_html=True
+)
 st.markdown("<div class='hw-grid'>", unsafe_allow_html=True)
 for cc in ["US","BR","MX"]:
-    bullets = summ.get(cc, [])
-    country_name = COUNTRY_MAP.get(cc, cc)
-    st.markdown(f"<div class='hw-col'><div class='hw-title'>{country_name}</div>", unsafe_allow_html=True)
+    bullets=summary.get(cc,[])
+    country=COUNTRY_MAP.get(cc,cc)
+    st.markdown(f"<div class='hw-col'><div class='hw-title'>{country}</div>", unsafe_allow_html=True)
     if bullets:
         for b in bullets[:2]:
-            color = "amb"
+            color="amb"
             if "🔴" in b: color="red"
             elif "🟢" in b: color="green"
             st.markdown(f"<div class='hw-item'><span class='dot {color}'></span>{b}</div>", unsafe_allow_html=True)
@@ -368,68 +343,67 @@ for cc in ["US","BR","MX"]:
         st.markdown("<div class='hw-item'><span class='dot green'></span>Sin novedades significativas (última revisión reciente).</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
 # ==================== KPI: Frozen Meat Industry Monitor ====================
 @st.cache_data(ttl=300)
 def pct_30d(sym:str):
     try:
-        d = yf.Ticker(sym).history(period="45d", interval="1d")
-        if d is None or d.empty or d["Close"].dropna().shape[0] < 5:
-            return None
-        c = d["Close"].dropna()
-        last = float(c.iloc[-1]); prev = float(c.iloc[0])
-        return (last/prev - 1.0) * 100.0
+        d=yf.Ticker(sym).history(period="45d", interval="1d")
+        if d is None or d.empty or d["Close"].dropna().shape[0]<5: return None
+        c=d["Close"].dropna(); last=float(c.iloc[-1]); prev=float(c.iloc[0])
+        return (last/prev-1.0)*100.0
     except Exception:
         return None
 
-live_signals = []
-for label, sym in [("Res (LE=F)", "LE=F"), ("Cerdo (HE=F)","HE=F"), ("USD/MXN", "MXN=X"), ("Maíz (ZC=F)","ZC=F")]:
-    p = pct_30d(sym)
+live_signals=[]
+for label,sym in [("Res (LE=F)","LE=F"),("Cerdo (HE=F)","HE=F"),("USD/MXN","MXN=X"),("Maíz (ZC=F)","ZC=F")]:
+    p=pct_30d(sym)
     if p is not None:
-        sgn = "▲" if p>=0 else "▼"
+        sgn="▲" if p>=0 else "▼"
         live_signals.append({"num": f"{p:+.1f}%", "sub": f"{label} · cambio 30D {sgn}", "badge":"mercado vivo"})
 
 @st.cache_data(ttl=43200)
-def gdelt_numbers(query:str, timespan="30d", maxrecords=30):
+def gdelt_numbers(query:str, timespan="45d", maxrecords=40):
     try:
-        r = requests.get(GDELT_DOC, params={
-            "query": query, "mode":"ArtList", "format":"json",
-            "timespan": timespan, "maxrecords": str(maxrecords)
+        r=requests.get(GDELT_DOC, params={
+            "query":query, "mode":"ArtList","format":"json","timespan":timespan,
+            "maxrecords":str(maxrecords),"sort":"DateDesc"
         }, headers=COMMON_HEADERS, timeout=12)
-        if r.status_code != 200: return []
-        arts = (r.json() or {}).get("articles", []) or []
+        if r.status_code!=200: return []
+        arts=(r.json() or {}).get("articles",[]) or []
         out=[]
         for a in arts:
-            t = a.get("title","")
-            m_pct = re.search(r"([+-]?\d{1,2}(?:\.\d+)?\s?%)", t)
-            m_usd = re.search(r"\$[\d,]+(\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
-            if not (m_pct or m_usd): 
-                continue
-            num = m_pct.group(1) if m_pct else m_usd.group(0)
-            dom = a.get("domain","")
-            out.append({"num": num, "sub": t, "badge": dom})
+            t=a.get("title","")
+            m_pct=re.search(r"([+-]?\d{1,3}(?:\.\d+)?\s?%)", t)
+            m_usd=re.search(r"\$[\d,]+(?:\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
+            if not (m_pct or m_usd): continue
+            num=m_pct.group(1) if m_pct else m_usd.group(0)
+            dom=a.get("domain","")
+            out.append({"num":num,"sub":t,"badge":dom})
         return out[:8]
     except Exception:
         return []
 
-news_metrics = []
+news_metrics=[]
 news_metrics += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
 news_metrics += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
 news_metrics += gdelt_numbers("(frozen%20chicken%20market%20growth%20OR%20frozen%20poultry%20market)")
 news_metrics += gdelt_numbers("(Mexico%20chicken%20imports%20OR%20México%20importaciones%20pollo)")
 
-items_im = (live_signals[:4] + news_metrics[:4])[:3]
-items_im = ai_summarize_metrics(items_im)
+items_im=(live_signals[:4]+news_metrics[:4])[:3]
+items_im=ai_summarize_metrics(items_im)
 
 st.markdown("<div class='card im-card'><div class='im-wrap'>", unsafe_allow_html=True)
 if not items_im:
     st.markdown("<div class='im-item' style='opacity:1'><div class='im-num'>—</div><div class='im-sub'>Sin datos recientes</div></div>", unsafe_allow_html=True)
 else:
+    # mínimo siempre pintar 3; si hay menos, repetir
+    while len(items_im)<3:
+        items_im += items_im
     for it in items_im[:3]:
-        num = it.get("num","—")
-        sub = it.get("sub","")
-        badge = it.get("badge","")
-        extra = f" <span class='im-badge'>{badge}</span>" if badge else ""
+        num=it.get("num","—"); sub=it.get("sub",""); badge=it.get("badge","")
+        extra=f" <span class='im-badge'>{badge}</span>" if badge else ""
         st.markdown(f"<div class='im-item'><div class='im-num'>{num}</div><div class='im-sub'>{sub}{extra}</div></div>", unsafe_allow_html=True)
 st.markdown("</div></div>", unsafe_allow_html=True)
 
