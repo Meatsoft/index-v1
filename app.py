@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.1.2 (IM centrado y tipografías grandes)
+# LaSultana Meat Index — v2.1.3 (IM centrado, sin "mercado vivo", tamaños finos)
 import os, re, json, time, datetime as dt
 import requests, streamlit as st, yfinance as yf
 
@@ -58,7 +58,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Frozen Meat Industry Monitor (centrado + grande) */
+/* Frozen Meat Industry Monitor (centrado + tamaños ajustados) */
 .im-card{min-height:210px}
 .im-wrap{
   position:relative;height:180px;overflow:hidden;width:100%;
@@ -67,7 +67,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   position:absolute;left:0;right:0;top:0;opacity:0;
   height:100%;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:6px 10px;
+  padding:0 10px;
   animation:fadeSlot 30s linear infinite;will-change:opacity,transform
 }
 .im-item:nth-child(1){animation-delay:0s}
@@ -79,10 +79,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   36%  {opacity:0; transform:translateY(-6px)}
   100% {opacity:0}
 }
-.im-num{font-size:72px;font-weight:900;letter-spacing:.3px;line-height:1;color:var(--txt);text-align:center}
+.im-num{font-size:66px;font-weight:900;letter-spacing:.3px;line-height:1;color:var(--txt);text-align:center}
 .im-sub{font-size:22px;color:var(--muted);margin-top:6px;text-align:center}
-.im-desc{font-size:16px;color:#8fb7d5;text-align:center;margin-top:10px}
-.im-badge{display:inline-block;margin-left:8px;padding:3px 8px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12px}
+.im-desc{font-size:18px;color:#8fb7d5;text-align:center;margin-top:10px}
 
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
@@ -214,7 +213,7 @@ st.markdown(kpi_cme("Res en pie",lc,lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie",lh,lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== IA opcional ====================
+# ==================== IA opcional (para Health Watch) ====================
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
@@ -245,27 +244,7 @@ def ai_health(groups):
     except Exception:
         return fallback()
 
-def ai_metrics(items):
-    if not OPENAI_API_KEY: return items
-    try:
-        payload={"model":"gpt-4o-mini",
-                 "messages":[
-                    {"role":"system","content":"Devuelve lista JSON de objetos {num, sub, badge}. No inventes."},
-                    {"role":"user","content":json.dumps(items,ensure_ascii=False)}
-                 ],
-                 "temperature":0.2,"response_format":{"type":"json_object"}}
-        r=requests.post("https://api.openai.com/v1/chat/completions",
-                        headers={"Authorization":f"Bearer {OPENAI_API_KEY}",
-                                 "Content-Type":"application/json"},
-                        json=payload, timeout=15)
-        data=json.loads(r.json()["choices"][0]["message"]["content"])
-        if isinstance(data,list): return data
-        if isinstance(data,dict) and "items" in data and isinstance(data["items"],list): return data["items"]
-        return items
-    except Exception:
-        return items
-
-# ==================== GDELT ====================
+# ==================== GDELT (Health Watch) ====================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
@@ -273,7 +252,6 @@ DISEASE_Q=("("
            "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
            "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
 
-COUNTRY_MAP={"US":"Estados Unidos","BR":"Brasil","MX":"México"}
 SPECIES_REGEX=[(r"\b(pollo|aves|broiler|chicken)\b","Pollo"),
                (r"\b(pavo|turkey)\b","Pavo"),
                (r"\b(cerdo|swine|hog|pork)\b","Cerdo"),
@@ -326,16 +304,16 @@ counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
 groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
 summary=ai_health(groups)
 
+# Señales del monitor (sin badge/etiquetas adicionales)
 sig_fx = pct_change_n_days("MXN=X", 30)
 sig_lc = pct_change_n_days("LE=F", 30)
 sig_lh = pct_change_n_days("HE=F", 30)
 
 live_signals=[
-    {"num": f"{sig_lc:+.1f}%" if sig_lc is not None else "—", "sub":"Res (LE=F) · cambio 30D", "badge":"mercado vivo"},
-    {"num": f"{sig_lh:+.1f}%" if sig_lh is not None else "—", "sub":"Cerdo (HE=F) · cambio 30D", "badge":"mercado vivo"},
-    {"num": f"{sig_fx:+.1f}%" if sig_fx is not None else "—", "sub":"USD/MXN · cambio 30D", "badge":"mercado vivo"},
+    {"num": f"{sig_lc:+.1f}%" if sig_lc is not None else "—", "sub":"Res (LE=F) · cambio 30D"},
+    {"num": f"{sig_lh:+.1f}%" if sig_lh is not None else "—", "sub":"Cerdo (HE=F) · cambio 30D"},
+    {"num": f"{sig_fx:+.1f}%" if sig_fx is not None else "—", "sub":"USD/MXN · cambio 30D"},
 ]
-live_signals = ai_metrics(live_signals)
 while len(live_signals) < 3:
     live_signals += live_signals
 
@@ -361,15 +339,14 @@ for cc in ["US","BR","MX"]:
 hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
-# Derecha: Industry Monitor (rotador 3 slots)
+# Derecha: Industry Monitor (rotador 3 slots, centrado)
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in live_signals[:3]:
-    num=it.get("num","—"); sub=it.get("sub",""); badge=it.get("badge","")
-    extra=f" <span class='im-badge'>{badge}</span>" if badge else ""
+    num=it.get("num","—"); sub=it.get("sub","")
     im_html.append(
         f"<div class='im-item'>"
         f"<div class='im-num'>{num}</div>"
-        f"<div class='im-sub'>{sub}{extra}</div>"
+        f"<div class='im-sub'>{sub}</div>"
         f"<div class='im-desc'>Variación de cierre a cierre en los últimos 30 días (Yahoo Finance).</div>"
         f"</div>"
     )
