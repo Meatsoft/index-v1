@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.8 (Res/Cerdo en USD/lb + precio más grande)
+# LaSultana Meat Index — v2.9
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -38,11 +38,11 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 
-/* Contenedor izquierdo para equilibrar espacios */
+/* Columna izquierda del KPI */
 .kpi-left{
   position:relative;
   display:flex; flex-direction:column; align-items:flex-start;
-  padding-bottom:30px; /* reserva para la etiqueta inferior */
+  padding-bottom:30px; /* espacio para unidad inferior */
 }
 .kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
 .kpi-left .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
@@ -52,7 +52,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 .kpi .delta{font-size:20px;margin-left:12px}
 
-/* Etiqueta de unidad anclada abajo-izquierda */
+/* Unidad anclada abajo-izquierda */
 .unit-bottom{
   position:absolute;left:14px;bottom:12px;
   font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
@@ -74,7 +74,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador sin “espejo”) */
+/* Market Insights (rotador) */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
@@ -112,12 +112,10 @@ def fmt2(x):
     if x is None: return "—"
     s=f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
 def fmt4(x):
     if x is None: return "—"
     s=f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
 def humanize_delta(minutes: float) -> str:
     if minutes < 1: return "hace segundos"
     if minutes < 60: return f"hace {int(minutes)} min"
@@ -130,11 +128,9 @@ def load_json(path: Path, default):
         if path.exists(): return json.loads(path.read_text(encoding="utf-8"))
     except: pass
     return default
-
 def save_json(path: Path, data):
     try: path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except: pass
-
 def is_stale(payload: dict, max_age_sec: int) -> bool:
     try:
         ts = payload.get("updated"); 
@@ -222,13 +218,8 @@ def kpi_fx(title,val,chg):
     )
 
 def kpi_cme(title, price, chg, per_lb: bool):
-    """
-    Muestra Res/Cerdo. Si per_lb==True, divide price y chg entre 100 y usa unidad USD/lb.
-    """
     if price is None:
-        big_html="<div class='big'>N/D</div>"
-        unit="USD/lb" if per_lb else "USD/100 lb"
-        delta=""
+        big_html="<div class='big'>N/D</div>"; unit="USD/lb" if per_lb else "USD/100 lb"; delta=""
     else:
         disp_price = (price/100.0) if per_lb else price
         big_html=f"<div class='big'>{fmt2(disp_price)}</div>"
@@ -254,8 +245,8 @@ def kpi_cme(title, price, chg, per_lb: bool):
 # Render KPIs en un solo bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),   # <-- ahora por libra
-    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True), # <-- ahora por libra
+    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),
+    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True),
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -314,7 +305,6 @@ COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 DISEASE_Q=("("
            "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
            "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
-COUNTRY_MAP={"US":"Estados Unidos","BR":"Brasil","MX":"México"}
 SPECIES_REGEX=[(r"\b(pollo|aves|broiler|chicken)\b","Pollo"),
                (r"\b(pavo|turkey)\b","Pavo"),
                (r"\b(cerdo|swine|hog|pork)\b","Cerdo"),
@@ -409,6 +399,15 @@ def default_im():
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
 
+# Necesidad de bootstrap inmediato (arranque frío / placeholders)
+def needs_bootstrap_hw(p:dict)->bool:
+    cnt = (p or {}).get("counts", {})
+    if sum(cnt.values())==0: return True
+    return False
+def needs_bootstrap_im(p:dict)->bool:
+    items=(p or {}).get("items",[])
+    return (not items) or all((i.get("num") == "—" or i.get("sub","").lower().startswith("sin datos")) for i in items)
+
 def refresh_hw_async():
     def run():
         try:
@@ -438,11 +437,8 @@ def refresh_im_async():
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
-                    live.append({
-                        "num":f"{sign}{p:.1f}%",
-                        "sub":f"{label} · cambio 30D",
-                        "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."
-                    })
+                    live.append({"num":f"{sign}{p:.1f}%","sub":f"{label} · cambio 30D",
+                                 "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
 
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
@@ -459,9 +455,10 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-if is_stale(hw_payload, 15*60):
+# Disparadores de refresco
+if is_stale(hw_payload, 15*60) or needs_bootstrap_hw(hw_payload):
     refresh_hw_async()
-if is_stale(im_payload, 10*60):
+if is_stale(im_payload, 10*60) or needs_bootstrap_im(im_payload):
     refresh_im_async()
 
 # ====================== RENDER: HEALTH + INSIGHTS ======================
@@ -489,16 +486,17 @@ hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
 items_im = im_payload.get("items", default_im()["items"])[:3]
+# *** FIX: sin sangrías para que Markdown NO lo trate como código ***
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
-    num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
-    im_html.append(f"""
-      <div class="im-item">
-        <div class="im-num">{num}</div>
-        <div class="im-sub">{sub}</div>
-        <div class="im-desc">{desc if desc else "&nbsp;"}</div>
-      </div>
-    """)
+    num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","") or "&nbsp;"
+    im_html.append(
+        "<div class='im-item'>"
+        f"<div class='im-num'>{num}</div>"
+        f"<div class='im-sub'>{sub}</div>"
+        f"<div class='im-desc'>{desc}</div>"
+        "</div>"
+    )
 im_html.append("</div></div>")
 im_html_str="".join(im_html)
 
