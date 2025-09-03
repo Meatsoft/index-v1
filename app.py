@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.0 (rotador suave + sin vacíos)
+# LaSultana Meat Index — v3.1 (rotador suave sin overlap + USD/lb)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -21,7 +21,7 @@ html,body,.stApp{
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar separación vertical entre bloques */
+/* Unificar separaciones */
 .element-container{margin-bottom:12px !important;}
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -40,18 +40,12 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi-left{
-  position:relative; display:flex; flex-direction:column; align-items:flex-start;
-  padding-bottom:28px; /* espacio para unidad inferior */
-}
+.kpi-left{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding-bottom:28px}
 .kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
-.kpi-left .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
-.card.cme .kpi-left .big{font-size:52px}
+.kpi-left .big{font-size:52px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
+.card.cme .kpi-left .big{font-size:56px} /* un poquito más grande para res/cerdo */
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-bottom{
-  position:absolute;left:14px;bottom:12px;
-  font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
-}
+.unit-bottom{position:absolute;left:14px;bottom:12px;font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -68,41 +62,45 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights — rotador suave, sin huecos y centrado */
-.im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
+/* Market Insights — rotador SÚPER estable, sin overlap ni vacíos */
+.im-card{display:flex;align-items:center;justify-content:center;min-height:176px}
 .im-wrap{
-  position:relative; width:100%; height:168px;
-  display:grid; place-items:center;
-  overflow:hidden; border:1px solid var(--line); border-radius:12px; padding:10px;
-  isolation:isolate; contain:content;
+  position:relative;width:100%;height:168px;display:grid;place-items:center;
+  overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:10px;isolation:isolate;contain:content;
 }
 .im-item{
-  position:absolute; inset:0; display:grid; place-items:center; padding:10px;
-  opacity:0; transform:translateY(6px);
-  animation:imCycle 18s ease-in-out infinite; /* 3 items x 6s */
-  will-change:opacity,transform;
+  position:absolute;inset:0;display:grid;place-items:center;padding:10px;
+  opacity:0;transform:none; /* sin translate para que no “salte” */
+  animation:imCycle 18s ease-in-out infinite;
+  will-change:opacity;
 }
-.im-item:nth-child(1){animation-delay:0s}
+.im-item:first-child{animation-name:imCycleFirst} /* solo el primero inicia visible */
 .im-item:nth-child(2){animation-delay:6s}
 .im-item:nth-child(3){animation-delay:12s}
 
-/* Regla: cada item aparece YA centrado, se mantiene visible ~5.6s, 
-   hace fade-out 0.4s; el siguiente empieza inmediatamente (sin pantallazo). */
+/* El primero arranca visible; los demás arrancan ocultos.
+   Ventana visible ~0%–28%, fade-out breve 28–33%, luego oculto. */
+@keyframes imCycleFirst{
+  0%{opacity:1}
+  28%{opacity:1}
+  33%{opacity:0}
+  100%{opacity:0}
+}
 @keyframes imCycle{
-  0%   {opacity:1; transform:translateY(0)}     /* aparece inmediato, sin vacío */
-  75%  {opacity:1; transform:translateY(0)}     /* visible y estable */
-  97%  {opacity:0; transform:translateY(-3px)}  /* fade-out corto y limpio */
-  100% {opacity:0; transform:translateY(-3px)}
+  0%{opacity:0}
+  5%{opacity:1}
+  28%{opacity:1}
+  33%{opacity:0}
+  100%{opacity:0}
 }
 
-/* Tipos y espaciado */
-.im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
+.im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0;text-align:center}
 .im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:2px 0 6px 0;text-align:center}
 .im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:0 14px;text-align:center}
 
-/* Por si el usuario prefiere menos movimiento */
+/* Reduced motion */
 @media (prefers-reduced-motion: reduce){
-  .im-item{animation:none; opacity:1; transform:none; position:relative}
+  .im-item{animation:none;opacity:1;position:relative}
 }
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
@@ -245,8 +243,8 @@ def kpi_cme(title, price, chg, per_lb: bool):
 
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),
-    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True),
+    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),   # mostrado como USD/lb
+    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True), # mostrado como USD/lb
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -505,6 +503,5 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Auto-refresh global
 time.sleep(60)
 st.rerun()
