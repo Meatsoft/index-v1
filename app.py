@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.9
+# LaSultana Meat Index — v3.0 (rotador suave + sin vacíos)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -14,7 +14,10 @@ st.markdown("""
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b; --font:"Manrope","Inter","Segoe UI",Roboto,Arial,sans-serif;
 }
-html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
+html,body,.stApp{
+  background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important;
+  font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
+}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
@@ -37,27 +40,18 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
-
-/* Columna izquierda del KPI */
 .kpi-left{
-  position:relative;
-  display:flex; flex-direction:column; align-items:flex-start;
-  padding-bottom:30px; /* espacio para unidad inferior */
+  position:relative; display:flex; flex-direction:column; align-items:flex-start;
+  padding-bottom:28px; /* espacio para unidad inferior */
 }
 .kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
 .kpi-left .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
-
-/* Solo Res/Cerdo: número un poco más grande */
 .card.cme .kpi-left .big{font-size:52px}
-
 .kpi .delta{font-size:20px;margin-left:12px}
-
-/* Unidad anclada abajo-izquierda */
 .unit-bottom{
   position:absolute;left:14px;bottom:12px;
   font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
 }
-.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -74,35 +68,42 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador) */
+/* Market Insights — rotador suave, sin huecos y centrado */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
-  position:relative; width:100%; height:164px;
-  overflow:hidden; border:1px solid var(--line); border-radius:12px;
-  padding:8px 10px 6px 10px;
-  display:flex; align-items:center; justify-content:center;
+  position:relative; width:100%; height:168px;
+  display:grid; place-items:center;
+  overflow:hidden; border:1px solid var(--line); border-radius:12px; padding:10px;
   isolation:isolate; contain:content;
 }
 .im-item{
-  position:absolute; inset:0;
-  display:flex; flex-direction:column; align-items:center; justify-content:center;
-  opacity:0; transform:translateY(8px);
-  animation:imCycle 30s ease-in-out infinite;
-  will-change:opacity,transform; pointer-events:none;
+  position:absolute; inset:0; display:grid; place-items:center; padding:10px;
+  opacity:0; transform:translateY(6px);
+  animation:imCycle 18s ease-in-out infinite; /* 3 items x 6s */
+  will-change:opacity,transform;
 }
 .im-item:nth-child(1){animation-delay:0s}
-.im-item:nth-child(2){animation-delay:10s}
-.im-item:nth-child(3){animation-delay:20s}
-@keyframes imCycle{
-  0%, 8%   {opacity:0; transform:translateY(8px)}
-  10%, 30% {opacity:1; transform:translateY(2px)}
-  32%, 100%{opacity:0; transform:translateY(-2px)}
-}
-.im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
-.im-sub{font-size:18px;color:var(--txt);opacity:.9;line-height:1.25;margin:4px 0 6px 0}
-.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
+.im-item:nth-child(2){animation-delay:6s}
+.im-item:nth-child(3){animation-delay:12s}
 
-/* Footer */
+/* Regla: cada item aparece YA centrado, se mantiene visible ~5.6s, 
+   hace fade-out 0.4s; el siguiente empieza inmediatamente (sin pantallazo). */
+@keyframes imCycle{
+  0%   {opacity:1; transform:translateY(0)}     /* aparece inmediato, sin vacío */
+  75%  {opacity:1; transform:translateY(0)}     /* visible y estable */
+  97%  {opacity:0; transform:translateY(-3px)}  /* fade-out corto y limpio */
+  100% {opacity:0; transform:translateY(-3px)}
+}
+
+/* Tipos y espaciado */
+.im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
+.im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:2px 0 6px 0;text-align:center}
+.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:0 14px;text-align:center}
+
+/* Por si el usuario prefiere menos movimiento */
+@media (prefers-reduced-motion: reduce){
+  .im-item{animation:none; opacity:1; transform:none; position:relative}
+}
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
 """, unsafe_allow_html=True)
@@ -242,7 +243,6 @@ def kpi_cme(title, price, chg, per_lb: bool):
         "</div>"
     )
 
-# Render KPIs en un solo bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme("Res en pie",lc,lc_chg, per_lb=True),
@@ -399,11 +399,9 @@ def default_im():
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
 
-# Necesidad de bootstrap inmediato (arranque frío / placeholders)
 def needs_bootstrap_hw(p:dict)->bool:
     cnt = (p or {}).get("counts", {})
-    if sum(cnt.values())==0: return True
-    return False
+    return sum(cnt.values())==0
 def needs_bootstrap_im(p:dict)->bool:
     items=(p or {}).get("items",[])
     return (not items) or all((i.get("num") == "—" or i.get("sub","").lower().startswith("sin datos")) for i in items)
@@ -455,7 +453,6 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-# Disparadores de refresco
 if is_stale(hw_payload, 15*60) or needs_bootstrap_hw(hw_payload):
     refresh_hw_async()
 if is_stale(im_payload, 10*60) or needs_bootstrap_im(im_payload):
@@ -486,7 +483,6 @@ hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
 items_im = im_payload.get("items", default_im()["items"])[:3]
-# *** FIX: sin sangrías para que Markdown NO lo trate como código ***
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","") or "&nbsp;"
