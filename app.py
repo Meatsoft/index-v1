@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7.3 (espacios A/B/C iguales + USD/100 lb más grande)
+# LaSultana Meat Index — v2.7.4 (USD/100 lb = 1.05em + equilibrio de espacios del número)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -19,7 +19,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 .block-container{max-width:1400px;padding-top:12px}
 
 /* === Unificar spacing entre TODOS los bloques de Streamlit === */
-.element-container{margin-bottom:12px !important;}  /* <- A, B, C ahora iguales */
+.element-container{margin-bottom:12px !important;}  /* A, B, C iguales */
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
@@ -37,16 +37,24 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
-.kpi .delta{font-size:20px;margin-left:12px}
-.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Etiqueta de unidad anclada abajo-izquierda (un poco más grande) */
-.unit-bottom{
-  position:absolute;left:14px;bottom:10px;
-  font-size:.95em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
+/* contenedor izquierdo del KPI para equilibrar espacios */
+.kpi-left{
+  position:relative;
+  display:flex; flex-direction:column; align-items:flex-start;
+  /* espacio reservado para la etiqueta inferior */
+  padding-bottom:30px;
 }
+.kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
+.kpi-left .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
+.kpi .delta{font-size:20px;margin-left:12px}
+
+/* Etiqueta de unidad anclada abajo-izquierda (ligeramente más grande) */
+.unit-bottom{
+  position:absolute;left:14px;bottom:12px;
+  font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
+}
+.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -199,22 +207,40 @@ def kpi_fx(title,val,chg):
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
+    return (
+        "<div class='card'>"
+        "<div class='kpi'>"
+        "<div class='kpi-left'>"
+        f"<div class='title'>{title}</div>{val_html}"
+        "</div>"
+        f"{delta}"
+        "</div>"
+        "</div>"
+    )
 
 def kpi_cme(title,price,chg):
     unit="USD/100 lb"
     if price is None:
-        price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta=""
+        big_html=f"<div class='big'>N/D</div>"; delta=""
     else:
-        price_html=f"<div class='big'>{fmt2(price)}</div>"
+        big_html=f"<div class='big'>{fmt2(price)}</div>"
         if chg is None: delta=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    # etiqueta anclada abajo-izquierda
-    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div><div class='unit-bottom'>{unit}</div></div>"
+    return (
+        "<div class='card'>"
+        "<div class='kpi'>"
+        "<div class='kpi-left'>"
+        f"<div class='title'>{title}</div>{big_html}"
+        "</div>"
+        f"{delta}"
+        "</div>"
+        f"<div class='unit-bottom'>{unit}</div>"
+        "</div>"
+    )
 
-# Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles)
+# Render KPIs en un solo bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme("Res en pie",lc,lc_chg),
