@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7.4 (USD/100 lb = 1.05em + equilibrio de espacios del número)
+# LaSultana Meat Index — v2.7.5 (Res/Cerdo en USD/lb)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -32,7 +32,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
-@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}
 
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
@@ -196,8 +196,8 @@ st.markdown(f"""
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
 fx,fx_chg=get_yahoo("MXN=X")   # USD/MXN
-lc,lc_chg=get_yahoo("LE=F")    # Live Cattle
-lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs
+lc,lc_chg=get_yahoo("LE=F")    # Live Cattle (Yahoo en USD/100 lb aprox)
+lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs  (USD/100 lb aprox)
 
 def kpi_fx(title,val,chg):
     if val is None: val_html="<div class='big'>N/D</div>"; delta=""
@@ -218,16 +218,24 @@ def kpi_fx(title,val,chg):
         "</div>"
     )
 
-def kpi_cme(title,price,chg):
-    unit="USD/100 lb"
-    if price is None:
+def kpi_cme_per_lb(title, price_cwt, chg_cwt):
+    """
+    Convierte precios de Yahoo (aprox USD/100 lb) a USD/lb.
+    También convierte el delta y lo muestra con 4 decimales para no perder precisión.
+    """
+    unit="USD/lb"
+    if price_cwt is None:
         big_html=f"<div class='big'>N/D</div>"; delta=""
     else:
-        big_html=f"<div class='big'>{fmt2(price)}</div>"
-        if chg is None: delta=""
+        price_lb = price_cwt / 100.0
+        big_html=f"<div class='big'>{fmt2(price_lb)}</div>"  # precio con 2 decimales
+        if chg_cwt is None:
+            delta=""
         else:
-            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+            chg_lb = chg_cwt / 100.0
+            cls="up" if chg_lb>=0 else "down"; arr="▲" if chg_lb>=0 else "▼"
+            # 4 decimales para cambios por libra (suelen ser muy pequeños)
+            delta=f"<div class='delta {cls}'>{arr} {fmt4(abs(chg_lb))}</div>"
     return (
         "<div class='card'>"
         "<div class='kpi'>"
@@ -240,11 +248,11 @@ def kpi_cme(title,price,chg):
         "</div>"
     )
 
-# Render KPIs en un solo bloque
+# Render KPIs (Res/Cerdo ya en USD/lb)
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg),
-    kpi_cme("Cerdo en pie",lh,lh_chg),
+    kpi_cme_per_lb("Res en pie",lc,lc_chg),
+    kpi_cme_per_lb("Cerdo en pie",lh,lh_chg),
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
