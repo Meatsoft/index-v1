@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7.5 (Res/Cerdo en USD/lb)
+# LaSultana Meat Index — v2.8 (Res/Cerdo en USD/lb + precio más grande)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,8 +18,8 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* === Unificar spacing entre TODOS los bloques de Streamlit === */
-.element-container{margin-bottom:12px !important;}  /* A, B, C iguales */
+/* Unificar separación vertical entre bloques */
+.element-container{margin-bottom:12px !important;}
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
@@ -32,24 +32,27 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
-@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}
+@keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 
-/* contenedor izquierdo del KPI para equilibrar espacios */
+/* Contenedor izquierdo para equilibrar espacios */
 .kpi-left{
   position:relative;
   display:flex; flex-direction:column; align-items:flex-start;
-  /* espacio reservado para la etiqueta inferior */
-  padding-bottom:30px;
+  padding-bottom:30px; /* reserva para la etiqueta inferior */
 }
 .kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
 .kpi-left .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
+
+/* Solo Res/Cerdo: número un poco más grande */
+.card.cme .kpi-left .big{font-size:52px}
+
 .kpi .delta{font-size:20px;margin-left:12px}
 
-/* Etiqueta de unidad anclada abajo-izquierda (ligeramente más grande) */
+/* Etiqueta de unidad anclada abajo-izquierda */
 .unit-bottom{
   position:absolute;left:14px;bottom:12px;
   font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
@@ -196,8 +199,8 @@ st.markdown(f"""
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
 fx,fx_chg=get_yahoo("MXN=X")   # USD/MXN
-lc,lc_chg=get_yahoo("LE=F")    # Live Cattle (Yahoo en USD/100 lb aprox)
-lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs  (USD/100 lb aprox)
+lc,lc_chg=get_yahoo("LE=F")    # Live Cattle (USD/100 lb)
+lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs (USD/100 lb)
 
 def kpi_fx(title,val,chg):
     if val is None: val_html="<div class='big'>N/D</div>"; delta=""
@@ -218,26 +221,26 @@ def kpi_fx(title,val,chg):
         "</div>"
     )
 
-def kpi_cme_per_lb(title, price_cwt, chg_cwt):
+def kpi_cme(title, price, chg, per_lb: bool):
     """
-    Convierte precios de Yahoo (aprox USD/100 lb) a USD/lb.
-    También convierte el delta y lo muestra con 4 decimales para no perder precisión.
+    Muestra Res/Cerdo. Si per_lb==True, divide price y chg entre 100 y usa unidad USD/lb.
     """
-    unit="USD/lb"
-    if price_cwt is None:
-        big_html=f"<div class='big'>N/D</div>"; delta=""
+    if price is None:
+        big_html="<div class='big'>N/D</div>"
+        unit="USD/lb" if per_lb else "USD/100 lb"
+        delta=""
     else:
-        price_lb = price_cwt / 100.0
-        big_html=f"<div class='big'>{fmt2(price_lb)}</div>"  # precio con 2 decimales
-        if chg_cwt is None:
+        disp_price = (price/100.0) if per_lb else price
+        big_html=f"<div class='big'>{fmt2(disp_price)}</div>"
+        if chg is None:
             delta=""
         else:
-            chg_lb = chg_cwt / 100.0
-            cls="up" if chg_lb>=0 else "down"; arr="▲" if chg_lb>=0 else "▼"
-            # 4 decimales para cambios por libra (suelen ser muy pequeños)
-            delta=f"<div class='delta {cls}'>{arr} {fmt4(abs(chg_lb))}</div>"
+            disp_chg = (chg/100.0) if per_lb else chg
+            cls="up" if disp_chg>=0 else "down"; arr="▲" if disp_chg>=0 else "▼"
+            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(disp_chg))}</div>"
+        unit="USD/lb" if per_lb else "USD/100 lb"
     return (
-        "<div class='card'>"
+        "<div class='card cme'>"
         "<div class='kpi'>"
         "<div class='kpi-left'>"
         f"<div class='title'>{title}</div>{big_html}"
@@ -248,11 +251,11 @@ def kpi_cme_per_lb(title, price_cwt, chg_cwt):
         "</div>"
     )
 
-# Render KPIs (Res/Cerdo ya en USD/lb)
+# Render KPIs en un solo bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme_per_lb("Res en pie",lc,lc_chg),
-    kpi_cme_per_lb("Cerdo en pie",lh,lh_chg),
+    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),   # <-- ahora por libra
+    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True), # <-- ahora por libra
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -508,6 +511,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Auto-refresh global (suave)
+# Auto-refresh global
 time.sleep(60)
 st.rerun()
