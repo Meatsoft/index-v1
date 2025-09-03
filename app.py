@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.1 (rotador suave sin overlap + USD/lb)
+# LaSultana Meat Index — v3.2 (slides +35% y transiciones +40%)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -43,7 +43,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi-left{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding-bottom:28px}
 .kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
 .kpi-left .big{font-size:52px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
-.card.cme .kpi-left .big{font-size:56px} /* un poquito más grande para res/cerdo */
+.card.cme .kpi-left .big{font-size:56px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-bottom{position:absolute;left:14px;bottom:12px;font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
 
@@ -62,7 +62,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights — rotador SÚPER estable, sin overlap ni vacíos */
+/* Market Insights — +35% de duración, +40% de transición, sin gaps ni overlap */
 .im-card{display:flex;align-items:center;justify-content:center;min-height:176px}
 .im-wrap{
   position:relative;width:100%;height:168px;display:grid;place-items:center;
@@ -70,27 +70,30 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 }
 .im-item{
   position:absolute;inset:0;display:grid;place-items:center;padding:10px;
-  opacity:0;transform:none; /* sin translate para que no “salte” */
-  animation:imCycle 18s ease-in-out infinite;
+  opacity:0;transform:none;
+  animation:imCycle 24.3s ease-in-out infinite;   /* 18s * 1.35 */
   will-change:opacity;
 }
-.im-item:first-child{animation-name:imCycleFirst} /* solo el primero inicia visible */
-.im-item:nth-child(2){animation-delay:6s}
-.im-item:nth-child(3){animation-delay:12s}
+.im-item:first-child{animation-name:imCycleFirst}
+.im-item:nth-child(2){animation-delay:8.1s}   /* 24.3 / 3 */
+.im-item:nth-child(3){animation-delay:16.2s}
 
-/* El primero arranca visible; los demás arrancan ocultos.
-   Ventana visible ~0%–28%, fade-out breve 28–33%, luego oculto. */
+/* Parámetros:
+   - Fade = 1.26s (0.9 * 1.40) => 5.185% del ciclo de 24.3s
+   - Fin del fade-out exactamente en 33.333% para empalmar con el siguiente slide
+   - Inicio de fade-out = 33.333% - 5.185% = 28.148%
+   - Fade-in normal = 5.185% */
 @keyframes imCycleFirst{
   0%{opacity:1}
-  28%{opacity:1}
-  33%{opacity:0}
+  28.148%{opacity:1}
+  33.333%{opacity:0}
   100%{opacity:0}
 }
 @keyframes imCycle{
   0%{opacity:0}
-  5%{opacity:1}
-  28%{opacity:1}
-  33%{opacity:0}
+  5.185%{opacity:1}
+  28.148%{opacity:1}
+  33.333%{opacity:0}
   100%{opacity:0}
 }
 
@@ -102,6 +105,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 @media (prefers-reduced-motion: reduce){
   .im-item{animation:none;opacity:1;position:relative}
 }
+
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
 """, unsafe_allow_html=True)
