@@ -1,10 +1,4 @@
-# LaSultana Meat Index — v2.6
-# Cambios:
-# - Espacios A y C igualados a B (12px)
-# - Footer solo "Actualizado: ..." con hora America/Monterrey
-# - Market Insights sin "espejo" (animación suave y aislada)
-# - Health/Insights render inmediato con refresh en segundo plano
-
+# LaSultana Meat Index — v2.7 (espacios A/B/C iguales)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -23,14 +17,17 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px} /* 12px */
+
+/* === Unificar spacing entre TODOS los bloques de Streamlit === */
+.element-container{margin-bottom:12px !important;}  /* <- A, B, C ahora iguales */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
 /* Logo */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
 /* Cinta bursátil */
-.tape{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:12px} /* 12px */
+.tape{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:44px}
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform;backface-visibility:hidden;transform:translateZ(0)}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
@@ -38,7 +35,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* KPIs */
-.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px} /* B = 12px */
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
@@ -46,7 +43,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
-.sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-top:0} /* C = 12px total con margen inferior del grid arriba */
+.sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
 @media (max-width:1100px){ .sec-grid{grid-template-columns:1fr} }
 
 /* Health Watch */
@@ -67,7 +64,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   overflow:hidden; border:1px solid var(--line); border-radius:12px;
   padding:8px 10px 6px 10px;
   display:flex; align-items:center; justify-content:center;
-  isolation:isolate; contain:content;    /* evita bleed/ghost */
+  isolation:isolate; contain:content;
 }
 .im-item{
   position:absolute; inset:0;
@@ -88,20 +85,20 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .im-sub{font-size:18px;color:var(--txt);opacity:.9;line-height:1.25;margin:4px 0 6px 0}
 .im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
 
+/* Footer */
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
 """, unsafe_allow_html=True)
 
+# ====================== HELPERS ======================
 def fmt2(x):
     if x is None: return "—"
     s=f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
 def fmt4(x):
     if x is None: return "—"
     s=f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
 def humanize_delta(minutes: float) -> str:
     if minutes < 1: return "hace segundos"
     if minutes < 60: return f"hace {int(minutes)} min"
@@ -114,11 +111,9 @@ def load_json(path: Path, default):
         if path.exists(): return json.loads(path.read_text(encoding="utf-8"))
     except: pass
     return default
-
 def save_json(path: Path, data):
     try: path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except: pass
-
 def is_stale(payload: dict, max_age_sec: int) -> bool:
     try:
         ts = payload.get("updated"); 
@@ -127,13 +122,13 @@ def is_stale(payload: dict, max_age_sec: int) -> bool:
         return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
     except: return True
 
-# ==================== LOGO ====================
+# ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
 if Path("ILSMeatIndex.png").exists():
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== CINTA SUPERIOR ====================
+# ====================== CINTA ======================
 COMPANIES_USD=[("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
                ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
                ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
@@ -175,7 +170,7 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ==================== FX & FUTUROS ====================
+# ====================== FX & FUTUROS ======================
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
@@ -202,14 +197,15 @@ def kpi_cme(title,price,chg):
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
-# Nota: margen inferior explícito 12px para que C == B
-st.markdown("<div class='grid' style='margin-bottom:12px'>", unsafe_allow_html=True)
-st.markdown(kpi_fx("USD/MXN",fx,fx_chg), unsafe_allow_html=True)
-st.markdown(kpi_cme("Res en pie",lc,lc_chg), unsafe_allow_html=True)
-st.markdown(kpi_cme("Cerdo en pie",lh,lh_chg), unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+# === Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles) ===
+kpi_html = "".join([
+    kpi_fx("USD/MXN",fx,fx_chg),
+    kpi_cme("Res en pie",lc,lc_chg),
+    kpi_cme("Cerdo en pie",lh,lh_chg),
+])
+st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
-# ==================== IA opcional ====================
+# ====================== IA opcional ======================
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
@@ -258,7 +254,7 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ==================== GDELT ====================
+# ====================== GDELT ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 DISEASE_Q=("("
@@ -330,7 +326,7 @@ def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
     except Exception:
         return []
 
-# ==================== SNAPSHOTS ====================
+# ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
 DATA_DIR = Path(".")
 HW_FILE = DATA_DIR / "hw_snapshot.json"
 IM_FILE = DATA_DIR / "im_snapshot.json"
@@ -358,8 +354,6 @@ def default_im():
 
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
-
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def refresh_hw_async():
     def run():
@@ -408,12 +402,12 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-if is_stale(hw_payload, 15*60):  # 15 min
+if is_stale(hw_payload, 15*60):
     refresh_hw_async()
-if is_stale(im_payload, 10*60):  # 10 min
+if is_stale(im_payload, 10*60):
     refresh_im_async()
 
-# ==================== RENDER: Health + Insights ====================
+# ====================== RENDER: HEALTH + INSIGHTS (misma altura de gaps) ======================
 counts = hw_payload.get("counts", {"US":0,"BR":0,"MX":0})
 summary = hw_payload.get("summary", default_hw()["summary"])
 
@@ -453,7 +447,7 @@ im_html_str="".join(im_html)
 
 st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'+im_html_str}</div>", unsafe_allow_html=True)
 
-# ==================== PIE ====================
+# ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
 st.markdown(
     f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
