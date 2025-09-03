@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7 (espacios A/B/C iguales)
+# LaSultana Meat Index — v2.8 (delta a la derecha + unidad abajo-izq 15% más chica)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,8 +18,8 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* === Unificar spacing entre TODOS los bloques de Streamlit === */
-.element-container{margin-bottom:12px !important;}  /* <- A, B, C ahora iguales */
+/* Igualar márgenes entre bloques (A, B y C) */
+.element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
@@ -36,11 +36,13 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
-.kpi{display:flex;justify-content:space-between;align-items:flex-start}
+.kpi{position:relative; display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:28px;}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
-.kpi .delta{font-size:20px;margin-left:12px}
+.kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px;line-height:1.05}
+.kpi .delta{position:absolute; right:14px; top:10px; font-size:20px; margin:0}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+/* NUEVO: unidad anclada abajo-izquierda y 15% más pequeña que antes */
+.unit-bottom{position:absolute; left:14px; bottom:10px; font-size:.60em; color:var(--muted); font-weight:600; letter-spacing:.3px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -57,7 +59,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador sin “espejo”) */
+/* Market Insights (rotador suave y centrado) */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
@@ -82,7 +84,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   32%, 100%{opacity:0; transform:translateY(-2px)}
 }
 .im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
-.im-sub{font-size:18px;color:var(--txt);opacity:.9;line-height:1.25;margin:4px 0 6px 0}
+.im-sub{font-size:18px;color:var(--txt);opacity:.9;line-height:1.25;margin:4px 0 6px 0;text-align:center}
 .im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
 
 /* Footer */
@@ -187,17 +189,31 @@ def kpi_fx(title,val,chg):
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
 def kpi_cme(title,price,chg):
-    unit="USD/100 lb"
-    if price is None: price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta=""
+    """KPI de futuros (Live Cattle / Lean Hogs)
+       - Delta pegado a la derecha (CSS absolute)
+       - Unidad abajo a la izquierda (.unit-bottom), 15% más chica y sin quiebre (nbsp)"""
+    unit_html = "<div class='unit-bottom'>USD/100&nbsp;lb</div>"
+    if price is None:
+        price_html = "<div class='big'>N/D</div>"
+        delta = ""
     else:
-        price_html=f"<div class='big'>{fmt2(price)} <span class='unit-inline'>{unit}</span></div>"
-        if chg is None: delta=""
+        price_html = f"<div class='big'>{fmt2(price)}</div>"
+        if chg is None:
+            delta = ""
         else:
-            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
+            cls = "up" if chg>=0 else "down"; arr = "▲" if chg>=0 else "▼"
+            delta = f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+    return f"""
+    <div class="card">
+      <div class="kpi">
+        <div><div class="title">{title}</div>{price_html}</div>
+        {delta}
+        {unit_html}
+      </div>
+    </div>
+    """
 
-# === Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles) ===
+# Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles)
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme("Res en pie",lc,lc_chg),
@@ -205,7 +221,7 @@ kpi_html = "".join([
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
-# ====================== IA opcional ======================
+# ====================== IA opcional (igual que v2.7) ======================
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
@@ -254,13 +270,12 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ====================== GDELT ======================
+# ====================== GDELT + snapshots + async (igual que v2.7) ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 DISEASE_Q=("("
            "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
            "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
-COUNTRY_MAP={"US":"Estados Unidos","BR":"Brasil","MX":"México"}
 SPECIES_REGEX=[(r"\b(pollo|aves|broiler|chicken)\b","Pollo"),
                (r"\b(pavo|turkey)\b","Pavo"),
                (r"\b(cerdo|swine|hog|pork)\b","Cerdo"),
@@ -326,7 +341,6 @@ def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
     except Exception:
         return []
 
-# ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
 DATA_DIR = Path(".")
 HW_FILE = DATA_DIR / "hw_snapshot.json"
 IM_FILE = DATA_DIR / "im_snapshot.json"
@@ -407,7 +421,7 @@ if is_stale(hw_payload, 15*60):
 if is_stale(im_payload, 10*60):
     refresh_im_async()
 
-# ====================== RENDER: HEALTH + INSIGHTS (misma altura de gaps) ======================
+# ====================== RENDER: HEALTH + INSIGHTS ======================
 counts = hw_payload.get("counts", {"US":0,"BR":0,"MX":0})
 summary = hw_payload.get("summary", default_hw()["summary"])
 
