@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7.2 (fix KPI HTML + unidad 0.85em abajo-izquierda)
+# LaSultana Meat Index — v2.7.3 (espacios A/B/C iguales + USD/100 lb más grande)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,9 +18,9 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar spacing entre TODOS los bloques */
-.element-container{margin-bottom:12px !important;}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+/* === Unificar spacing entre TODOS los bloques de Streamlit === */
+.element-container{margin-bottom:12px !important;}  /* <- A, B, C ahora iguales */
+.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
 /* Logo */
@@ -36,17 +36,17 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
-.kpi{
-  position:relative;
-  display:flex;justify-content:space-between;align-items:flex-start;
-  padding-bottom:28px; /* espacio para la unidad abajo */
-}
+.kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
-/* unidad anclada abajo-izquierda (≈15% más chica que 1em) */
-.unit-bottom{position:absolute;left:14px;bottom:10px;font-size:.85em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
+
+/* Etiqueta de unidad anclada abajo-izquierda (un poco más grande) */
+.unit-bottom{
+  position:absolute;left:14px;bottom:10px;
+  font-size:.95em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap
+}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -63,7 +63,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador sin espejo) */
+/* Market Insights (rotador sin “espejo”) */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
@@ -101,10 +101,12 @@ def fmt2(x):
     if x is None: return "—"
     s=f"{x:,.2f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
 def fmt4(x):
     if x is None: return "—"
     s=f"{x:,.4f}"
     return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
 def humanize_delta(minutes: float) -> str:
     if minutes < 1: return "hace segundos"
     if minutes < 60: return f"hace {int(minutes)} min"
@@ -117,9 +119,11 @@ def load_json(path: Path, default):
         if path.exists(): return json.loads(path.read_text(encoding="utf-8"))
     except: pass
     return default
+
 def save_json(path: Path, data):
     try: path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except: pass
+
 def is_stale(payload: dict, max_age_sec: int) -> bool:
     try:
         ts = payload.get("updated"); 
@@ -134,12 +138,14 @@ if Path("ILSMeatIndex.png").exists():
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ====================== CINTA ======================
-COMPANIES_USD=[("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
-               ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
-               ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
-               ("Wingstop","WING"),("Yum! Brands","YUM"),("Restaurant Brands Intl.","QSR"),
-               ("Sysco","SYY"),("US Foods","USFD"),("Performance Food Group","PFGC"),("Walmart","WMT")]
+# ====================== CINTA BURSÁTIL ======================
+COMPANIES_USD=[
+    ("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
+    ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
+    ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
+    ("Wingstop","WING"),("Yum! Brands","YUM"),("Restaurant Brands Intl.","QSR"),
+    ("Sysco","SYY"),("US Foods","USFD"),("Performance Food Group","PFGC"),("Walmart","WMT")
+]
 
 @st.cache_data(ttl=75)
 def quote_last_and_change(sym:str):
@@ -164,7 +170,8 @@ items=[]
 for name,sym in COMPANIES_USD:
     last,chg=quote_last_and_change(sym)
     if last is None: continue
-    if chg is None: items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
+    if chg is None:
+        items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
         cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
@@ -180,7 +187,9 @@ st.markdown(f"""
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-fx,fx_chg=get_yahoo("MXN=X"); lc,lc_chg=get_yahoo("LE=F"); lh,lh_chg=get_yahoo("HE=F")
+fx,fx_chg=get_yahoo("MXN=X")   # USD/MXN
+lc,lc_chg=get_yahoo("LE=F")    # Live Cattle
+lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs
 
 def kpi_fx(title,val,chg):
     if val is None: val_html="<div class='big'>N/D</div>"; delta=""
@@ -193,29 +202,19 @@ def kpi_fx(title,val,chg):
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
 def kpi_cme(title,price,chg):
-    """HTML sin indentación (evita Markdown code block) + unidad abajo izq 0.85em."""
+    unit="USD/100 lb"
     if price is None:
-        price_html = "<div class='big'>N/D</div>"
-        delta_html = ""
+        price_html=f"<div class='big'>N/D <span class='unit-inline'>{unit}</span></div>"; delta=""
     else:
-        price_html = f"<div class='big'>{fmt2(price)}</div>"
-        if chg is None:
-            delta_html = ""
+        price_html=f"<div class='big'>{fmt2(price)}</div>"
+        if chg is None: delta=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    unit_html = "<div class='unit-bottom'>USD/100&nbsp;lb</div>"
-    return (
-        "<div class='card'>"
-          "<div class='kpi'>"
-            f"<div><div class='title'>{title}</div>{price_html}</div>"
-            f"{delta_html}"
-            f"{unit_html}"
-          "</div>"
-        "</div>"
-    )
+            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+    # etiqueta anclada abajo-izquierda
+    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div><div class='unit-bottom'>{unit}</div></div>"
 
-# Render KPIs en un solo bloque
+# Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles)
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme("Res en pie",lc,lc_chg),
@@ -402,8 +401,11 @@ def refresh_im_async():
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
-                    live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
-                                 "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
+                    live.append({
+                        "num":f"{sign}{p:.1f}%",
+                        "sub":f"{label} · cambio 30D",
+                        "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."
+                    })
 
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
@@ -467,7 +469,11 @@ st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'
 
 # ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
-st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
+st.markdown(
+    f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
+    unsafe_allow_html=True,
+)
 
+# Auto-refresh global (suave)
 time.sleep(60)
 st.rerun()
