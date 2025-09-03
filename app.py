@@ -1,9 +1,12 @@
-# LaSultana Meat Index — v2.4
-# - Health/Insights instantáneo (snapshot + refresh en segundo plano)
-# - Market Insights centrado y con gaps más cortos
-# - Caches estables (NO se limpian en cada run)
+# LaSultana Meat Index — v2.6
+# Cambios:
+# - Espacios A y C igualados a B (12px)
+# - Footer solo "Actualizado: ..." con hora America/Monterrey
+# - Market Insights sin "espejo" (animación suave y aislada)
+# - Health/Insights render inmediato con refresh en segundo plano
 
 import os, re, json, time, threading, datetime as dt
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import requests, streamlit as st, yfinance as yf
 
@@ -20,14 +23,14 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px} /* 12px */
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
 /* Logo */
 .logo-row{width:100%;display:flex;justify-content:center;align-items:center;margin:26px 0 22px}
 
 /* Cinta bursátil */
-.tape{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:18px}
+.tape{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:44px;margin-bottom:12px} /* 12px */
 .tape-track{display:flex;width:max-content;animation:marquee 210s linear infinite;will-change:transform;backface-visibility:hidden;transform:translateZ(0)}
 .tape-group{display:inline-block;white-space:nowrap;padding:10px 0;font-size:112%}
 .item{display:inline-block;margin:0 32px}
@@ -35,7 +38,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* KPIs */
-.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
+.grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px} /* B = 12px */
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
@@ -43,7 +46,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
-.sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
+.sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-top:0} /* C = 12px total con margen inferior del grid arriba */
 @media (max-width:1100px){ .sec-grid{grid-template-columns:1fr} }
 
 /* Health Watch */
@@ -57,28 +60,29 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador suave y centrado) */
+/* Market Insights (rotador sin “espejo”) */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
-  overflow:hidden; border:1px solid var(--line); border-radius:12px; padding:8px 10px 6px 10px;
+  overflow:hidden; border:1px solid var(--line); border-radius:12px;
+  padding:8px 10px 6px 10px;
   display:flex; align-items:center; justify-content:center;
+  isolation:isolate; contain:content;    /* evita bleed/ghost */
 }
 .im-item{
-  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  opacity:0; filter:blur(1px); transform:translateY(10px) scale(.995);
-  animation:imCycle 30s cubic-bezier(.33,1,.68,1) infinite;
-  will-change:opacity,transform,filter; pointer-events:none;
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  opacity:0; transform:translateY(8px);
+  animation:imCycle 30s ease-in-out infinite;
+  will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:10s}
 .im-item:nth-child(3){animation-delay:20s}
 @keyframes imCycle{
-  0%   {opacity:0; filter:blur(1px); transform:translateY(10px) scale(.995)}
-  3%   {opacity:1; filter:blur(0);   transform:translateY(2px)  scale(1)}
-  32%  {opacity:1; filter:blur(0);   transform:translateY(2px)  scale(1)}
-  36%  {opacity:0; filter:blur(2px); transform:translateY(-8px) scale(.995)}
-  100% {opacity:0; filter:blur(2px); transform:translateY(-8px) scale(.995)}
+  0%, 8%   {opacity:0; transform:translateY(8px)}
+  10%, 30% {opacity:1; transform:translateY(2px)}
+  32%, 100%{opacity:0; transform:translateY(-2px)}
 }
 .im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
 .im-sub{font-size:18px;color:var(--txt);opacity:.9;line-height:1.25;margin:4px 0 6px 0}
@@ -88,7 +92,6 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 </style>
 """, unsafe_allow_html=True)
 
-# ==================== HELPERS ====================
 def fmt2(x):
     if x is None: return "—"
     s=f"{x:,.2f}"
@@ -106,27 +109,23 @@ def humanize_delta(minutes: float) -> str:
     if hours < 24: return f"hace {int(hours)} h"
     days = int(hours//24); return f"hace {days} d"
 
-# Snapshots util
 def load_json(path: Path, default):
     try:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
+        if path.exists(): return json.loads(path.read_text(encoding="utf-8"))
     except: pass
     return default
 
 def save_json(path: Path, data):
-    try:
-        path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+    try: path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     except: pass
 
 def is_stale(payload: dict, max_age_sec: int) -> bool:
     try:
-        ts = payload.get("updated")
+        ts = payload.get("updated"); 
         if not ts: return True
         t = dt.datetime.fromisoformat(ts)
         return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
-    except:
-        return True
+    except: return True
 
 # ==================== LOGO ====================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -203,13 +202,14 @@ def kpi_cme(title,price,chg):
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
-st.markdown("<div class='grid'>", unsafe_allow_html=True)
+# Nota: margen inferior explícito 12px para que C == B
+st.markdown("<div class='grid' style='margin-bottom:12px'>", unsafe_allow_html=True)
 st.markdown(kpi_fx("USD/MXN",fx,fx_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Res en pie",lc,lc_chg), unsafe_allow_html=True)
 st.markdown(kpi_cme("Cerdo en pie",lh,lh_chg), unsafe_allow_html=True)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ==================== IA opcional (para resumir) ====================
+# ==================== IA opcional ====================
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
@@ -258,7 +258,7 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ==================== GDELT (ligero) ====================
+# ==================== GDELT ====================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 DISEASE_Q=("("
@@ -330,14 +330,13 @@ def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
     except Exception:
         return []
 
-# ==================== SNAPSHOTS (para evitar spinners) ====================
+# ==================== SNAPSHOTS ====================
 DATA_DIR = Path(".")
 HW_FILE = DATA_DIR / "hw_snapshot.json"
 IM_FILE = DATA_DIR / "im_snapshot.json"
 
-# Defaults inmediatos
 def default_hw():
-    base = {
+    return {
         "updated": dt.datetime.utcnow().isoformat(),
         "counts": {"US":0,"BR":0,"MX":0},
         "summary": {
@@ -346,7 +345,6 @@ def default_hw():
             "MX": ["🟢 Sin novedades significativas (última revisión reciente)."],
         }
     }
-    return base
 
 def default_im():
     return {
@@ -358,11 +356,9 @@ def default_im():
         ]
     }
 
-# Render inmediato desde snapshot
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
 
-# ============ Lanzar refresco en segundo plano si está viejo ============
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def refresh_hw_async():
@@ -380,7 +376,6 @@ def refresh_hw_async():
 def refresh_im_async():
     def run():
         try:
-            # señales vivas (rápido y cacheado)
             @st.cache_data(ttl=600)
             def pct_30d(sym:str):
                 try:
@@ -398,7 +393,7 @@ def refresh_im_async():
                     live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
                                  "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
 
-            news = []
+            news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
             news += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
             news += gdelt_numbers("(Mexico%20chicken%20imports%20OR%20México%20importaciones%20pollo)")
@@ -413,14 +408,12 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-# Checar si toca refrescar (sin bloquear)
 if is_stale(hw_payload, 15*60):  # 15 min
     refresh_hw_async()
 if is_stale(im_payload, 10*60):  # 10 min
     refresh_im_async()
 
 # ==================== RENDER: Health + Insights ====================
-# Health (izquierda)
 counts = hw_payload.get("counts", {"US":0,"BR":0,"MX":0})
 summary = hw_payload.get("summary", default_hw()["summary"])
 
@@ -444,7 +437,6 @@ for cc,label in [("US","Estados Unidos"),("BR","Brasil"),("MX","México")]:
 hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
-# Insights (derecha)
 items_im = im_payload.get("items", default_im()["items"])[:3]
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
@@ -459,16 +451,14 @@ for it in items_im:
 im_html.append("</div></div>")
 im_html_str="".join(im_html)
 
-st.markdown(f"<div class='sec-grid'><div class='card'>{hw_html_str}</div>{im_html_str}</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'+im_html_str}</div>", unsafe_allow_html=True)
 
 # ==================== PIE ====================
+local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
 st.markdown(
-    f"<div class='caption'>Actualizado: {dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} · "
-    "Fuentes: Yahoo Finance (~15 min), GDELT (prensa global). IA opcional con OPENAI_API_KEY. "
-    "Las secciones Health/Insights se muestran al instante y se actualizan en segundo plano.</div>",
+    f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
     unsafe_allow_html=True,
 )
 
-# Auto-refresh hands-free
 time.sleep(60)
 st.rerun()
