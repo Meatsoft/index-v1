@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.7.1 (v2.7 + unidad abajo-izquierda en KPIs de futuros)
+# LaSultana Meat Index — v2.7.2 (fix KPI HTML + unidad 0.85em abajo-izquierda)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,8 +18,8 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* === Unificar spacing entre TODOS los bloques de Streamlit === */
-.element-container{margin-bottom:12px !important;}  /* <- A, B, C ahora iguales */
+/* Unificar spacing entre TODOS los bloques */
+.element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
@@ -37,16 +37,16 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{
-  position:relative;                    /* necesario para unidad abajo */
+  position:relative;
   display:flex;justify-content:space-between;align-items:flex-start;
-  padding-bottom:28px;                  /* espacio reservado a la unidad */
+  padding-bottom:28px; /* espacio para la unidad abajo */
 }
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:48px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
-/* NUEVO: unidad anclada abajo-izquierda y 15% más chica */
-.unit-bottom{position:absolute;left:14px;bottom:10px;font-size:.60em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
+/* unidad anclada abajo-izquierda (≈15% más chica que 1em) */
+.unit-bottom{position:absolute;left:14px;bottom:10px;font-size:.85em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -63,7 +63,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador sin “espejo”) */
+/* Market Insights (rotador sin espejo) */
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
@@ -193,7 +193,7 @@ def kpi_fx(title,val,chg):
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
 def kpi_cme(title,price,chg):
-    """Versión v2.7 con unidad abajo-izquierda (sin tocar tickers/variación)."""
+    """HTML sin indentación (evita Markdown code block) + unidad abajo izq 0.85em."""
     if price is None:
         price_html = "<div class='big'>N/D</div>"
         delta_html = ""
@@ -204,19 +204,18 @@ def kpi_cme(title,price,chg):
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    # Unidad anclada al fondo-izq (no se parte '100 lb')
     unit_html = "<div class='unit-bottom'>USD/100&nbsp;lb</div>"
-    return f"""
-    <div class="card">
-      <div class="kpi">
-        <div><div class="title">{title}</div>{price_html}</div>
-        {delta_html}
-        {unit_html}
-      </div>
-    </div>
-    """
+    return (
+        "<div class='card'>"
+          "<div class='kpi'>"
+            f"<div><div class='title'>{title}</div>{price_html}</div>"
+            f"{delta_html}"
+            f"{unit_html}"
+          "</div>"
+        "</div>"
+    )
 
-# === Render de los 3 KPIs en un SOLO bloque (evita márgenes dobles) ===
+# Render KPIs en un solo bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme("Res en pie",lc,lc_chg),
@@ -426,7 +425,7 @@ if is_stale(hw_payload, 15*60):
 if is_stale(im_payload, 10*60):
     refresh_im_async()
 
-# ====================== RENDER: HEALTH + INSIGHTS (misma altura de gaps) ======================
+# ====================== RENDER: HEALTH + INSIGHTS ======================
 counts = hw_payload.get("counts", {"US":0,"BR":0,"MX":0})
 summary = hw_payload.get("summary", default_hw()["summary"])
 
@@ -468,10 +467,7 @@ st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'
 
 # ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
-st.markdown(
-    f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
-    unsafe_allow_html=True,
-)
+st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
 
 time.sleep(60)
 st.rerun()
