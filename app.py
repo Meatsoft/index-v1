@@ -239,7 +239,7 @@ def ai_health(groups):
             sev = it.get("severity","amb")
             dot = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
             bullets.append(f"{dot} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
-        return bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
+        return bullets or ["Sin novedades significativas (última revisión reciente)."]
 
     try:
         if not OPENAI_API_KEY:
@@ -369,8 +369,8 @@ def default_hw():
         "updated": dt.datetime.utcnow().isoformat(),
         "counts": {"US":0,"BR":0,"MX":0},
         "summary": {
-            "US": ["🟢 Sin novedades significativas (última revisión reciente)."],
-            "BR": ["🟢 Sin novedades significativas (última revisión reciente)."],
+            "US": ["Sin novedades significativas (última revisión reciente)."],
+            "BR": ["Sin novedades significativas (última revisión reciente)."],
             "MX": ["🟢 Sin novedades significativas (última revisión reciente)."],
         }
     }
