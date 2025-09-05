@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.0 (solo KPIs + Market Insights full-width + USMEF IA)
+# LaSultana Meat Index — v3.1 (Market Insights full-width; fix render HTML)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -17,7 +17,7 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-.element-container{margin-bottom:12px !important;}  /* spacing A=B=C */
+.element-container{margin-bottom:12px !important;}  /* unifica spacing A=B=C */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
@@ -37,11 +37,11 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
 .kpi .big{font-size:52px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:10px 0 8px}
-.kpi .delta{font-size:20px;margin-left:auto} /* flecha pegada a la derecha */
+.kpi .delta{font-size:20px;margin-left:auto} /* flecha a la derecha */
 .unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 .unit-bottom{display:block;margin-top:8px;font-size:1.05em;font-weight:600;color:var(--muted)}
 
-/* Market Insights (full width, 35% más duración + 40% más transición suave) */
+/* Market Insights (ancho completo, 35% más duración + 40% transición) */
 .im-card{min-height:190px}
 .im-wrap{
   position:relative; width:100%; height:178px;
@@ -168,8 +168,8 @@ def kpi_fx(title,val,chg):
 
 def kpi_cme(title,price,chg):
     if price is None:
-        num="N/D"; unit="USD/100 lb" if not SHOW_PER_LB else "USD/lb"
-        price_html=f"<div class='big'>{num}<span class='unit-bottom'>{unit}</span></div>"; delta=""
+        unit="USD/lb" if SHOW_PER_LB else "USD/100 lb"
+        price_html=f"<div class='big'>N/D<span class='unit-bottom'>{unit}</span></div>"; delta=""
     else:
         p = price/100.0 if SHOW_PER_LB else price
         unit="USD/lb" if SHOW_PER_LB else "USD/100 lb"
@@ -181,12 +181,14 @@ def kpi_cme(title,price,chg):
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(d))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
-kpi_html = "".join([
-    kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg),
-    kpi_cme("Cerdo en pie",lh,lh_chg),
-])
-st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
+st.markdown(
+    "<div class='grid'>" +
+    kpi_fx("USD/MXN",fx,fx_chg) +
+    kpi_cme("Res en pie",lc,lc_chg) +
+    kpi_cme("Cerdo en pie",lh,lh_chg) +
+    "</div>",
+    unsafe_allow_html=True
+)
 
 # ====================== Market Insights (full width) ======================
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
@@ -225,7 +227,6 @@ def pct_30d(sym:str):
 
 @st.cache_data(ttl=3600)
 def usmef_recent_titles():
-    # Títulos recientes que mencionan USMEF
     q = "(USMEF OR \"U.S. Meat Export Federation\" OR \"US Meat Export Federation\")"
     try:
         r=requests.get(GDELT_DOC, params={
@@ -273,7 +274,6 @@ im_payload = load_json(IM_FILE, default_im())
 def refresh_im_async():
     def run():
         try:
-            # Señales vivas 30D
             live=[]
             for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F)","LE=F"),("Cerdo (HE=F)","HE=F")]:
                 p=pct_30d(sym)
@@ -282,7 +282,6 @@ def refresh_im_async():
                     live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
                                  "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
 
-            # Métricas de noticias
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
             news += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
@@ -290,12 +289,12 @@ def refresh_im_async():
 
             items = (live[:3] + news[:3])[:3]
 
-            # USMEF resumen por IA "a veces" (cada 3 ciclos)
+            # Resumen USMEF ocasional
             if int(time.time()//60) % 3 == 0:
                 titles = usmef_recent_titles()
                 summ = usmef_ai_summary(titles)
                 if summ:
-                    items[0] = {"num":"USMEF","sub":"Resumen de reportes recientes","desc":summ}
+                    items[0] = {"num":"USMEF", "sub":"Resumen de reportes recientes", "desc":summ}
 
             if not items: items = default_im()["items"]
             while len(items) < 3: items += items
@@ -306,24 +305,21 @@ def refresh_im_async():
             pass
     threading.Thread(target=run, daemon=True).start()
 
-# Refresh si está viejo
 if is_stale(im_payload, 10*60):  # 10 min
     refresh_im_async()
 
-# Render (full width)
+# ---- Render del rotador (asegurando que sea HTML, no texto) ----
 items_im = im_payload.get("items", default_im()["items"])[:3]
-im_parts = ["<div class='card im-card'><div class='im-wrap'>"]
+im_html_parts = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
-    im_parts.append(f"""
-      <div class="im-item">
-        <div class="im-num">{num}</div>
-        <div class="im-sub">{sub}</div>
-        <div class="im-desc">{desc if desc else "&nbsp;"}</div>
-      </div>
-    """)
-im_parts.append("</div></div>")
-st.markdown("".join(im_parts), unsafe_allow_html=True)
+    im_html_parts.append(
+        f"<div class='im-item'><div class='im-num'>{num}</div>"
+        f"<div class='im-sub'>{sub}</div><div class='im-desc'>{desc if desc else '&nbsp;'}</div></div>"
+    )
+im_html_parts.append("</div></div>")
+IM_HTML = "".join(im_html_parts)
+st.markdown(IM_HTML, unsafe_allow_html=True)  # <- importante: string + unsafe_allow_html
 
 # ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
