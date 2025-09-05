@@ -1,7 +1,8 @@
-# app.py — LaSultana Meat Index (KPIs + Market Insights + USMEF tape)
+# app.py — LaSultana Meat Index (fix cinta USMEF + KPIs/Insights estables)
 import os, re, json, time, threading, datetime as dt
 from pathlib import Path
 from zoneinfo import ZoneInfo
+from html import escape  # <-- para sanitizar la cinta USMEF
 
 import requests
 import streamlit as st
@@ -20,8 +21,6 @@ st.markdown("""
 html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
-
-/* Unificar espacio vertical entre TODOS los bloques */
 .element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -37,7 +36,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .up{color:var(--up)} .down{color:var(--down)} .muted{color:var(--muted)}
 @keyframes marquee{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
-/* KPIs (3 columnas) */
+/* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi-wrap{position:relative;min-height:118px;border:1px solid var(--line);border-radius:12px;padding:14px 14px 28px 14px}
 .kpi-title{font-size:18px;color:var(--muted);margin-bottom:4px}
@@ -45,7 +44,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi-delta{position:absolute;top:10px;right:12px;font-size:20px}
 .kpi-unit{position:absolute;left:14px;bottom:8px;font-size:0.70rem;color:var(--muted);font-weight:700;letter-spacing:.25px} /* 30% más pequeño */
 
-/* === Market Insights (a todo lo ancho) === */
+/* Market Insights (ancho completo, transiciones suaves) */
 .insights-card{min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
@@ -57,14 +56,12 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   position:absolute; inset:0;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   opacity:0; transform:translateY(10px);
-  animation:imCycle 42s ease-in-out infinite; /* 35% más tiempo total (antes ~30s) */
+  animation:imCycle 42s ease-in-out infinite;  /* 35% más duración total */
   will-change:opacity,transform; pointer-events:none;
 }
-/* 3 diapositivas con offsets de 14s */
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:14s}
 .im-item:nth-child(3){animation-delay:28s}
-/* transiciones 40% más largas (fade suave) */
 @keyframes imCycle{
   0%   {opacity:0; transform:translateY(8px)}
   6%   {opacity:1; transform:translateY(2px)}
@@ -76,7 +73,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:2px 0 6px 0;text-align:center;max-width:980px}
 .im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center;max-width:980px}
 
-/* === Cinta inferior (USMEF) === */
+/* Cinta inferior (USMEF) */
 .tape-news{border:1px solid var(--line);border-radius:12px;background:#0d141a;overflow:hidden;min-height:52px}
 .tape-news-track{display:flex;width:max-content;animation:marqueeNews 160s linear infinite;will-change:transform;backface-visibility:hidden;transform:translateZ(0)}
 .tape-news-group{display:inline-block;white-space:nowrap;padding:12px 0;font-size:21px}
@@ -170,7 +167,7 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ====================== KPIs (USD/MXN, Res, Cerdo) ======================
+# ====================== KPIs ======================
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
@@ -178,10 +175,10 @@ def to_per_lb(price, chg):
     if price is None: return None, None
     return price/100.0, (chg/100.0 if chg is not None else None)
 
-fx,fx_chg = get_yahoo("MXN=X")          # USD/MXN (MXN por USD)
+fx,fx_chg = get_yahoo("MXN=X")          # USD/MXN
 lc,lc_chg = get_yahoo("LE=F")           # Live Cattle (USD/100 lb)
 lh,lh_chg = get_yahoo("HE=F")           # Lean Hogs (USD/100 lb)
-lc,lc_chg = to_per_lb(lc,lc_chg)        # Convertir a USD/lb
+lc,lc_chg = to_per_lb(lc,lc_chg)        # -> USD/lb
 lh,lh_chg = to_per_lb(lh,lh_chg)
 
 def kpi_fx(title,val,chg):
@@ -220,7 +217,6 @@ st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_summarize_list(items):
-    """Formatea/recorta 'sub' y 'desc' con IA (opcional)."""
     if not OPENAI_API_KEY: return items
     try:
         payload = {
@@ -241,10 +237,10 @@ def ai_summarize_list(items):
         if isinstance(data, list): return data
         if isinstance(data, dict) and "items" in data and isinstance(data["items"], list): return data["items"]
         return items
-    except: 
+    except:
         return items
 
-# ====================== GDELT (para Insights + USMEF) ======================
+# ====================== GDELT (Insights + USMEF) ======================
 GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc"
 HDR = {"User-Agent":"Mozilla/5.0"}
 
@@ -273,12 +269,11 @@ def gdelt_search(query:str, timespan="45d", maxrecords=40):
         }, headers=HDR, timeout=8)
         if r.status_code!=200: return []
         return (r.json() or {}).get("articles",[]) or []
-    except: 
+    except:
         return []
 
 def build_usmef_items():
     arts  = gdelt_search("(USMEF OR \"U.S. Meat Export Federation\")", timespan="60d", maxrecords=60)
-    # Filtrar a usmef.org y limpiar duplicados por URL
     seen=set(); out=[]
     for a in arts:
         dom = (a.get("domain") or "").lower()
@@ -358,11 +353,10 @@ def refresh_tape_async():
             pass
     threading.Thread(target=run, daemon=True).start()
 
-# Disparar refrescos en 2º plano cuando estén “viejos”
 if is_stale(im_payload,   10*60): refresh_insights_async()
 if is_stale(tape_payload, 30*60): refresh_tape_async()
 
-# ====================== RENDER: Market Insights (ancho completo) ======================
+# ====================== RENDER INSIGHTS ======================
 items_im = im_payload.get("items", default_im()["items"])[:3]
 im_html = ["<div class='card insights-card'><div class='im-wrap'>"]
 for it in items_im:
@@ -376,9 +370,9 @@ for it in items_im:
 im_html.append("</div></div>")
 st.markdown("".join(im_html), unsafe_allow_html=True)
 
-# ====================== RENDER: Cinta inferior (USMEF) ======================
+# ====================== RENDER CINTA USMEF (FIX) ======================
 lines = tape_payload.get("lines", default_tape()["lines"])
-line_html = " · ".join([f"<span class='item'>{st._utils.escape_markdown(l, unsafe_allow_html=True)}</span>" for l in lines])
+line_html = " ".join([f"<span class='item'>{escape(l)}</span>" for l in lines])  # <- fix
 st.markdown(f"""
 <div class='tape-news'><div class='tape-news-track'>
   <div class='tape-news-group'>{line_html}</div>
@@ -390,6 +384,6 @@ st.markdown(f"""
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
 st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
 
-# ====================== REFRESH MANUAL CADA 60s ======================
+# ====================== REFRESH 60s ======================
 time.sleep(60)
 st.rerun()
