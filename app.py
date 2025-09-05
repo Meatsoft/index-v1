@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.8 (USD/lb -30%, Insights full width)
+# LaSultana Meat Index — v2.9 (sparklines 30D sobre KPIs)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,7 +18,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar spacing entre TODOS los bloques (A/B/C iguales) */
+/* Unificar spacing entre TODOS los bloques */
 .element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -38,11 +38,15 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:54px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:10px 0 8px 0}
+.kpi .big{font-size:54px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 6px 0}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-bottom{font-size:.70em;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:6px} /* -30% */
+.unit-bottom{font-size:.70em;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:6px} /* 30% más chico */
 
-/* Market Insights (rotador suave a todo lo ancho) */
+/* Sparklines encima del número */
+.spark{height:36px;margin:-4px 0 2px 0}
+.spark svg{width:100%;height:36px;display:block;opacity:.95}
+
+/* Market Insights (rotador full-width, suave) */
 .im-card{display:flex; align-items:center; justify-content:center;}
 .im-wrap{
   position:relative; width:100%; height:176px;
@@ -53,7 +57,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .im-item{
   position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
   opacity:0; transform:translateY(10px);
-  animation:imCycle 40.5s ease-in-out infinite;    /* +35% duración total */
+  animation:imCycle 40.5s ease-in-out infinite; /* +35% duración */
   will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
@@ -158,7 +162,7 @@ st.markdown(f"""
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-SHOW_PER_LB = True   # Mostrar USD/lb (divide por 100 los futuros de LE=F y HE=F)
+SHOW_PER_LB = True   # Mostrar USD/lb (divide /100 LE=F y HE=F)
 
 fx,fx_chg=get_yahoo("MXN=X")
 lc,lc_chg=get_yahoo("LE=F")
@@ -173,33 +177,90 @@ def adjust_per_lb(price, chg):
 lc, lc_chg = adjust_per_lb(lc, lc_chg)
 lh, lh_chg = adjust_per_lb(lh, lh_chg)
 
-def kpi_fx(title,val,chg):
-    if val is None: val_html="<div class='big'>N/D</div>"; delta=""
+# ======== Series 30D y sparkline SVG ========
+@st.cache_data(ttl=300)
+def series_30d(sym:str):
+    try:
+        d=yf.Ticker(sym).history(period="45d", interval="1d")
+        c=d["Close"].dropna()
+        if c.shape[0] < 5: return None
+        vals=list(c.values)[-30:]  # últimos ~30
+        return vals
+    except: return None
+
+def normalize(vals, w=300, h=36, pad=2):
+    if not vals or len(vals)<2:
+        return [(0,h/2),(w,h/2)]
+    mn=min(vals); mx=max(vals); span=(mx-mn) or 1e-9
+    n=len(vals); step=(w-2*pad)/(n-1)
+    pts=[]
+    for i,v in enumerate(vals):
+        x=pad+i*step
+        y=pad+(h-2*pad)*(1-(v-mn)/span)  # invertido (arriba = mayor)
+        pts.append((x,y))
+    return pts
+
+def sparkline_svg(vals, trend_color="#a9c7e4"):
+    if not vals or len(vals)<2: return ""
+    w,h=300,36
+    pts=normalize(vals,w,h)
+    # path
+    path="M " + " L ".join(f"{x:.2f} {y:.2f}" for x,y in pts)
+    # último punto
+    lx,ly=pts[-1]
+    return f"""
+    <div class="spark">
+      <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">
+        <path d="{path}" fill="none" stroke="{trend_color}" stroke-width="2"/>
+        <circle cx="{lx:.2f}" cy="{ly:.2f}" r="2.6" fill="{trend_color}"/>
+      </svg>
+    </div>
+    """
+
+# colores según tendencia
+def trend_color(vals):
+    try:
+        return "var(--up)" if vals[-1] >= vals[0] else "var(--down)"
+    except:
+        return "var(--muted)"
+
+# preparamos series
+fx_series = series_30d("MXN=X")
+lc_series = series_30d("LE=F")
+lh_series = series_30d("HE=F")
+# ajustar per-lb a las series de futuros si aplica
+if SHOW_PER_LB and lc_series: lc_series=[v/100.0 for v in lc_series]
+if SHOW_PER_LB and lh_series: lh_series=[v/100.0 for v in lh_series]
+
+def kpi_fx(title,val,chg, series=None):
+    spark = sparkline_svg(series, trend_color(series)) if series else ""
+    if val is None: val_html=f"{spark}<div class='big'>N/D</div>"; delta=""
     else:
-        val_html=f"<div class='big'>{fmt4(val)}</div>"
+        val_html=f"{spark}<div class='big'>{fmt4(val)}</div>"
         if chg is None: delta=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
-def kpi_cme(title,price,chg):
+def kpi_cme(title,price,chg, series=None):
     unit="USD/lb" if SHOW_PER_LB else "USD/100 lb"
+    spark = sparkline_svg(series, trend_color(series)) if series else ""
     if price is None:
-        price_html=f"<div class='big'>N/D</div><div class='unit-bottom'>{unit}</div>"; delta=""
+        price_html=f"{spark}<div class='big'>N/D</div><div class='unit-bottom'>{unit}</div>"; delta=""
     else:
-        price_html=f"<div class='big'>{fmt2(price)}</div><div class='unit-bottom'>{unit}</div>"
+        price_html=f"{spark}<div class='big'>{fmt2(price)}</div><div class='unit-bottom'>{unit}</div>"
         if chg is None: delta=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
-# Render
+# Render KPIs con sparklines
 kpi_html = "".join([
-    kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg),
-    kpi_cme("Cerdo en pie",lh,lh_chg),
+    kpi_fx("USD/MXN",fx,fx_chg, fx_series),
+    kpi_cme("Res en pie",lc,lc_chg, lc_series),
+    kpi_cme("Cerdo en pie",lh,lh_chg, lh_series),
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -250,7 +311,7 @@ def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
     except Exception:
         return []
 
-# ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
+# ====================== SNAPSHOT + REFRESCO INSIGHTS ======================
 DATA_DIR = Path(".")
 IM_FILE = DATA_DIR / "im_snapshot.json"
 
@@ -301,14 +362,6 @@ def refresh_im_async():
             save_json(IM_FILE, payload)
         except: pass
     threading.Thread(target=run, daemon=True).start()
-
-def is_stale(payload: dict, max_age_sec: int) -> bool:
-    try:
-        ts = payload.get("updated"); 
-        if not ts: return True
-        t = dt.datetime.fromisoformat(ts)
-        return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
-    except: return True
 
 if is_stale(im_payload, 10*60):
     refresh_im_async()
