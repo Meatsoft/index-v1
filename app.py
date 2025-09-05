@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.2 (slides +35% y transiciones +40%)
+# LaSultana Meat Index — v3.0 (Health Watch FIX + layout pulido)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -14,16 +14,13 @@ st.markdown("""
   --bg:#0a0f14; --panel:#0f151b; --line:#1f2b3a; --txt:#e9f3ff; --muted:#a9c7e4;
   --up:#25d07d; --down:#ff6b6b; --font:"Manrope","Inter","Segoe UI",Roboto,Arial,sans-serif;
 }
-html,body,.stApp{
-  background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important;
-  font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1;
-}
+html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-family:var(--font)!important}
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar separaciones */
+/* Unificar spacing entre TODOS los bloques (A,B,C iguales) */
 .element-container{margin-bottom:12px !important;}
-.card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
 
 /* Logo */
@@ -40,12 +37,14 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* KPIs */
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
-.kpi-left{position:relative;display:flex;flex-direction:column;align-items:flex-start;padding-bottom:28px}
-.kpi-left .title{font-size:18px;color:var(--muted);margin:0 0 10px 0}
-.kpi-left .big{font-size:52px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 8px 0}
-.card.cme .kpi-left .big{font-size:56px}
+.kpi .title{font-size:18px;color:var(--muted)}
+.kpi .big{font-size:50px;font-weight:900;letter-spacing:.2px}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-bottom{position:absolute;left:14px;bottom:12px;font-size:1.05em;color:var(--muted);font-weight:600;letter-spacing:.3px;white-space:nowrap}
+.unit-inline{font-size:.70em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+
+/* Variante: unidad debajo a la izquierda (USD/lb) */
+.kpi .value-wrap{display:flex;flex-direction:column;align-items:flex-start}
+.kpi .unit-below{font-size:.80em;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-top:6px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -62,50 +61,41 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights — +35% de duración, +40% de transición, sin gaps ni overlap */
-.im-card{display:flex;align-items:center;justify-content:center;min-height:176px}
+/* Market Insights (rotador suave sin “espejo”) */
+:root{
+  --im-total: 40.5s;      /* 35% más visible por slide (≈13.5s c/u) */
+  --im-fade:  1.4s;       /* ~40% más de transición */
+}
+.im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
-  position:relative;width:100%;height:168px;display:grid;place-items:center;
-  overflow:hidden;border:1px solid var(--line);border-radius:12px;padding:10px;isolation:isolate;contain:content;
+  position:relative; width:100%; height:164px;
+  overflow:hidden; border:1px solid var(--line); border-radius:12px;
+  padding:8px 10px 6px 10px;
+  display:flex; align-items:center; justify-content:center;
+  isolation:isolate; contain:content;
 }
 .im-item{
-  position:absolute;inset:0;display:grid;place-items:center;padding:10px;
-  opacity:0;transform:none;
-  animation:imCycle 24.3s ease-in-out infinite;   /* 18s * 1.35 */
-  will-change:opacity;
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  opacity:0; transform:translateY(8px);
+  animation:imCycle var(--im-total) ease-in-out infinite;
+  will-change:opacity,transform; pointer-events:none;
 }
-.im-item:first-child{animation-name:imCycleFirst}
-.im-item:nth-child(2){animation-delay:8.1s}   /* 24.3 / 3 */
-.im-item:nth-child(3){animation-delay:16.2s}
-
-/* Parámetros:
-   - Fade = 1.26s (0.9 * 1.40) => 5.185% del ciclo de 24.3s
-   - Fin del fade-out exactamente en 33.333% para empalmar con el siguiente slide
-   - Inicio de fade-out = 33.333% - 5.185% = 28.148%
-   - Fade-in normal = 5.185% */
-@keyframes imCycleFirst{
-  0%{opacity:1}
-  28.148%{opacity:1}
-  33.333%{opacity:0}
-  100%{opacity:0}
-}
+.im-item:nth-child(1){animation-delay:0s}
+.im-item:nth-child(2){animation-delay:calc(var(--im-total)/3)}
+.im-item:nth-child(3){animation-delay:calc(2*var(--im-total)/3)}
 @keyframes imCycle{
-  0%{opacity:0}
-  5.185%{opacity:1}
-  28.148%{opacity:1}
-  33.333%{opacity:0}
-  100%{opacity:0}
+  0%   {opacity:0; transform:translateY(8px)}
+  3.5% {opacity:1; transform:translateY(2px)}   /* fade-in ~1.4s */
+  30%  {opacity:1; transform:translateY(0)}     /* visible ~13.5s */
+  33.5%{opacity:0; transform:translateY(-2px)}  /* fade-out ~1.4s */
+  100% {opacity:0; transform:translateY(-2px)}
 }
+.im-num{font-size:58px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
+.im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:4px 0 6px 0}
+.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
 
-.im-num{font-size:62px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0;text-align:center}
-.im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:2px 0 6px 0;text-align:center}
-.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:0 14px;text-align:center}
-
-/* Reduced motion */
-@media (prefers-reduced-motion: reduce){
-  .im-item{animation:none;opacity:1;position:relative}
-}
-
+/* Footer */
 .caption{color:var(--muted)!important;margin-top:8px}
 </style>
 """, unsafe_allow_html=True)
@@ -148,14 +138,12 @@ if Path("ILSMeatIndex.png").exists():
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ====================== CINTA BURSÁTIL ======================
-COMPANIES_USD=[
-    ("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
-    ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
-    ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
-    ("Wingstop","WING"),("Yum! Brands","YUM"),("Restaurant Brands Intl.","QSR"),
-    ("Sysco","SYY"),("US Foods","USFD"),("Performance Food Group","PFGC"),("Walmart","WMT")
-]
+# ====================== CINTA (USD, firmes) ======================
+COMPANIES_USD=[("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
+               ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
+               ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
+               ("Wingstop","WING"),("Yum! Brands","YUM"),("Restaurant Brands Intl.","QSR"),
+               ("Sysco","SYY"),("US Foods","USFD"),("Performance Food Group","PFGC"),("Walmart","WMT")]
 
 @st.cache_data(ttl=75)
 def quote_last_and_change(sym:str):
@@ -180,8 +168,7 @@ items=[]
 for name,sym in COMPANIES_USD:
     last,chg=quote_last_and_change(sym)
     if last is None: continue
-    if chg is None:
-        items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
+    if chg is None: items.append(f"<span class='item'>{name} ({sym}) <b>{last:.2f}</b></span>")
     else:
         cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
         items.append(f"<span class='item'>{name} ({sym}) <b class='{cls}'>{last:.2f} {arr} {abs(chg):.2f}</b></span>")
@@ -193,13 +180,22 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ====================== FX & FUTUROS ======================
+# ====================== FX & FUTUROS (mostrar USD/lb) ======================
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-fx,fx_chg=get_yahoo("MXN=X")   # USD/MXN
-lc,lc_chg=get_yahoo("LE=F")    # Live Cattle (USD/100 lb)
-lh,lh_chg=get_yahoo("HE=F")    # Lean Hogs (USD/100 lb)
+fx,fx_chg=get_yahoo("MXN=X")
+lc,lc_chg=get_yahoo("LE=F")   # Live Cattle (USD/100 lb)
+lh,lh_chg=get_yahoo("HE=F")   # Lean Hogs (USD/100 lb)
+
+# Convertir a USD/lb (dividir entre 100 precio y cambio)
+def to_per_lb(px, ch):
+    px2 = (px/100.0) if px is not None else None
+    ch2 = (ch/100.0) if ch is not None else None
+    return px2, ch2
+
+lc,lc_chg = to_per_lb(lc, lc_chg)
+lh,lh_chg = to_per_lb(lh, lh_chg)
 
 def kpi_fx(title,val,chg):
     if val is None: val_html="<div class='big'>N/D</div>"; delta=""
@@ -209,46 +205,26 @@ def kpi_fx(title,val,chg):
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return (
-        "<div class='card'>"
-        "<div class='kpi'>"
-        "<div class='kpi-left'>"
-        f"<div class='title'>{title}</div>{val_html}"
-        "</div>"
-        f"{delta}"
-        "</div>"
-        "</div>"
-    )
+    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
-def kpi_cme(title, price, chg, per_lb: bool):
+def kpi_cme_per_lb(title,price,chg):
     if price is None:
-        big_html="<div class='big'>N/D</div>"; unit="USD/lb" if per_lb else "USD/100 lb"; delta=""
+        price_html="<div class='value-wrap'><div class='big'>N/D</div><div class='unit-below'>USD/lb</div></div>"
+        delta_html=""
     else:
-        disp_price = (price/100.0) if per_lb else price
-        big_html=f"<div class='big'>{fmt2(disp_price)}</div>"
+        price_html=f"<div class='value-wrap'><div class='big'>{fmt2(price)}</div><div class='unit-below'>USD/lb</div></div>"
         if chg is None:
-            delta=""
+            delta_html=""
         else:
-            disp_chg = (chg/100.0) if per_lb else chg
-            cls="up" if disp_chg>=0 else "down"; arr="▲" if disp_chg>=0 else "▼"
-            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(disp_chg))}</div>"
-        unit="USD/lb" if per_lb else "USD/100 lb"
-    return (
-        "<div class='card cme'>"
-        "<div class='kpi'>"
-        "<div class='kpi-left'>"
-        f"<div class='title'>{title}</div>{big_html}"
-        "</div>"
-        f"{delta}"
-        "</div>"
-        f"<div class='unit-bottom'>{unit}</div>"
-        "</div>"
-    )
+            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
+            delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
+    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta_html}</div></div>"
 
+# Render 3 KPIs en un bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme("Res en pie",lc,lc_chg, per_lb=True),   # mostrado como USD/lb
-    kpi_cme("Cerdo en pie",lh,lh_chg, per_lb=True), # mostrado como USD/lb
+    kpi_cme_per_lb("Res en pie",lc,lc_chg),
+    kpi_cme_per_lb("Cerdo en pie",lh,lh_chg),
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -256,17 +232,18 @@ st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
-    def fallback():
-        out={}
-        for c,its in groups.items():
-            bullets=[]
-            for it in its[:2]:
-                s="🔴" if it.get("severity")=="red" else ("🟠" if it.get("severity")=="amb" else "🟢")
-                bullets.append(f"{s} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
-            out[c]=bullets or ["🟢 Sin novedades relevantes."]
-        return out
-    if not OPENAI_API_KEY: return fallback()
+    """Resume 2 bullets por país. Si falla/ausente, fallback con _safe_bullets."""
+    def _safe_bullets(items):
+        bullets=[]
+        for it in items[:2]:
+            sev = it.get("severity","amb")
+            dot = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
+            bullets.append(f"{dot} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
+        return bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
+
     try:
+        if not OPENAI_API_KEY:
+            return {k:_safe_bullets(v) for k,v in groups.items()}
         payload={"model":"gpt-4o-mini",
                  "messages":[
                     {"role":"system","content":"Resume en español, máx 2 bullets por país, sin inventar; incluye especie y antigüedad."},
@@ -278,13 +255,20 @@ def ai_health(groups):
                         json=payload, timeout=12)
         txt=r.json()["choices"][0]["message"]["content"]
         data=json.loads(txt)
-        return data if isinstance(data,dict) else fallback()
+        # Asegurar siempre 2 bullets por país
+        out={}
+        for cc,items in groups.items():
+            arr = data.get(cc) if isinstance(data,dict) else None
+            if not arr: out[cc]=_safe_bullets(items)
+            else: out[cc]=arr[:2]
+        return out
     except Exception:
-        return fallback()
+        return {k:_safe_bullets(v) for k,v in groups.items()}
 
 def ai_metrics(items):
-    if not OPENAI_API_KEY: return items
+    """Mejora redacción de Market Insights (opcional)."""
     try:
+        if not OPENAI_API_KEY: return items
         payload={"model":"gpt-4o-mini",
                  "messages":[
                     {"role":"system","content":"Devuelve lista JSON de objetos {num, sub, desc}. No inventes; resume desc."},
@@ -301,76 +285,79 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ====================== GDELT ======================
+# ====================== GDELT (Health FIX) ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
+
 DISEASE_Q=("("
            "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
            "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
-SPECIES_REGEX=[(r"\b(pollo|aves|broiler|chicken)\b","Pollo"),
-               (r"\b(pavo|turkey)\b","Pavo"),
-               (r"\b(cerdo|swine|hog|pork)\b","Cerdo"),
-               (r"\b(res|bovine|cattle)\b","Res")]
-def detect_species(text:str)->str:
-    u=text.lower()
-    for pat,label in SPECIES_REGEX:
-        if re.search(pat,u): return label
-    return "Ganado"
-def severity(title:str)->str:
+
+COUNTRY_TOKENS = {
+    "US": ['"United States"', "USA", "Estados Unidos", "U.S."],
+    "BR": ["Brasil", "Brazil"],
+    "MX": ["México", "Mexico"]
+}
+
+def _ctoks(cc: str) -> str:
+    toks = COUNTRY_TOKENS.get(cc, [])
+    joined = "%20OR%20".join([requests.utils.quote(t) for t in toks])
+    return f"({joined})" if joined else ""
+
+def _severity(title:str)->str:
     u=title.lower()
     if any(k in u for k in ["confirmed","confirmado","quarantine","cuarentena","culling","sacrificio","outbreak","brote","emergency"]): return "red"
     if any(k in u for k in ["detected","detección","suspected","sospecha","cases","casos","alert"]): return "amb"
     return "green"
+def _species(text:str)->str:
+    u=text.lower()
+    if any(k in u for k in ["chicken","pollo","broiler","aves"]): return "Pollo"
+    if any(k in u for k in ["turkey","pavo"]): return "Pavo"
+    if any(k in u for k in ["swine","hog","pork","cerdo"]): return "Cerdo"
+    if any(k in u for k in ["cattle","bovine","res"]): return "Res"
+    return "Ganado"
 
 @st.cache_data(ttl=900)
-def gdelt_search(cc:str, timespan="30d", maxrecords=24):
-    try:
-        r=requests.get(GDELT_DOC, params={
-            "query":f"{DISEASE_Q} sourcecountry:{cc}",
-            "mode":"ArtList","format":"json","timespan":timespan,
-            "maxrecords":str(maxrecords),"sort":"DateDesc"
-        }, headers=COMMON_HEADERS, timeout=8)
-        if r.status_code!=200: return []
-        arts=(r.json() or {}).get("articles",[]) or []
-        now=dt.datetime.utcnow(); out=[]
-        for a in arts:
-            t=a.get("title","").strip()
-            if not t: continue
-            dom=a.get("domain",""); seen=a.get("seendate","")
-            when=""
-            try:
-                d=dt.datetime.strptime(seen,"%Y%m%d%H%M%S")
-                minutes=(now-d).total_seconds()/60.0
-                when=humanize_delta(minutes)
-            except: pass
-            out.append({"title":t,"url":a.get("url",""),"domain":dom,"when_txt":when,
-                        "species":detect_species(t),"severity":severity(t)})
-        rank={"red":0,"amb":1,"green":2}
-        out=sorted(out, key=lambda x: rank.get(x.get("severity","amb"),1))
-        return out[:maxrecords]
-    except Exception:
-        return []
+def gdelt_search(cc: str, timespan="30d", maxrecords=24):
+    """A) sourcecountry; B) fallback por mención de país + idioma ES/EN. Normaliza y ordena por severidad."""
+    def _fetch(params):
+        try:
+            r=requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=10)
+            if r.status_code!=200: return []
+            return (r.json() or {}).get("articles",[]) or []
+        except Exception:
+            return []
+    # A) Medio del país
+    params_a = {
+        "query": f"{DISEASE_Q} sourcecountry:{cc}",
+        "mode":"ArtList","format":"json","timespan":timespan,
+        "maxrecords":str(maxrecords),"sort":"DateDesc"
+    }
+    arts=_fetch(params_a)
 
-@st.cache_data(ttl=43200)
-def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
-    try:
-        r=requests.get(GDELT_DOC, params={
-            "query":query,"mode":"ArtList","format":"json","timespan":timespan,
-            "maxrecords":str(maxrecords),"sort":"DateDesc"
-        }, headers=COMMON_HEADERS, timeout=8)
-        if r.status_code!=200: return []
-        arts=(r.json() or {}).get("articles",[]) or []
-        out=[]
-        for a in arts:
-            t=a.get("title","")
-            m_pct=re.search(r"([+-]?\d{1,3}(?:\.\d+)?\s?%)", t)
-            m_usd=re.search(r"\$[\d,]+(?:\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
-            if not (m_pct or m_usd): continue
-            num=m_pct.group(1) if m_pct else m_usd.group(0)
-            out.append({"num":num,"sub":t,"desc":a.get("domain","")})
-        return out[:6]
-    except Exception:
-        return []
+    # B) Fallback por mención del país + idioma
+    if not arts:
+        q_b=f"{DISEASE_Q}%20AND%20{_ctoks(cc)}%20AND%20(sourcelang:English%20OR%20sourcelang:Spanish)"
+        params_b={"query":q_b,"mode":"ArtList","format":"json","timespan":timespan,
+                  "maxrecords":str(maxrecords),"sort":"DateDesc"}
+        arts=_fetch(params_b)
+
+    now=dt.datetime.utcnow(); out=[]
+    for a in arts:
+        t=(a.get("title") or "").strip()
+        if not t: continue
+        dom=a.get("domain",""); seen=a.get("seendate","")
+        when=""
+        try:
+            d=dt.datetime.strptime(seen,"%Y%m%d%H%M%S")
+            minutes=(now-d).total_seconds()/60.0
+            when=humanize_delta(minutes)
+        except: pass
+        out.append({"title":t,"url":a.get("url",""),"domain":dom,"when_txt":when,
+                    "species":_species(t),"severity":_severity(t)})
+    rank={"red":0,"amb":1,"green":2}
+    out=sorted(out, key=lambda x: rank.get(x.get("severity","amb"),1))
+    return out[:maxrecords]
 
 # ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
 DATA_DIR = Path(".")
@@ -398,15 +385,18 @@ def default_im():
         ]
     }
 
+def _merge_keep_nonempty(old_payload, new_payload):
+    """Si el fetch nuevo viene vacío, NO sobreescribas lo anterior."""
+    try:
+        c=new_payload.get("counts",{})
+        if isinstance(c,dict) and sum(c.values())==0:
+            return old_payload
+        return new_payload
+    except:
+        return old_payload
+
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
-
-def needs_bootstrap_hw(p:dict)->bool:
-    cnt = (p or {}).get("counts", {})
-    return sum(cnt.values())==0
-def needs_bootstrap_im(p:dict)->bool:
-    items=(p or {}).get("items",[])
-    return (not items) or all((i.get("num") == "—" or i.get("sub","").lower().startswith("sin datos")) for i in items)
 
 def refresh_hw_async():
     def run():
@@ -415,30 +405,52 @@ def refresh_hw_async():
             counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
             groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
             summary = ai_health(groups)
-            payload={"updated": dt.datetime.utcnow().isoformat(), "counts": counts, "summary": summary}
-            save_json(HW_FILE, payload)
+            new_payload={"updated": dt.datetime.utcnow().isoformat(), "counts": counts, "summary": summary}
+            merged=_merge_keep_nonempty(load_json(HW_FILE, default_hw()), new_payload)
+            save_json(HW_FILE, merged)
         except: pass
     threading.Thread(target=run, daemon=True).start()
+
+@st.cache_data(ttl=600)
+def pct_30d(sym:str):
+    try:
+        d=yf.Ticker(sym).history(period="45d", interval="1d")
+        if d is None or d.empty or d["Close"].dropna().shape[0] < 5: return None
+        c=d["Close"].dropna(); first=float(c.iloc[0]); last=float(c.iloc[-1])
+        return (last/first - 1.0)*100.0
+    except: return None
+
+@st.cache_data(ttl=43200)
+def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
+    try:
+        r=requests.get(GDELT_DOC, params={
+            "query":query,"mode":"ArtList","format":"json","timespan":timespan,
+            "maxrecords":str(maxrecords),"sort":"DateDesc"
+        }, headers=COMMON_HEADERS, timeout=8)
+        if r.status_code!=200: return []
+        arts=(r.json() or {}).get("articles",[]) or []
+        out=[]
+        for a in arts:
+            t=a.get("title","")
+            m_pct=re.search(r"([+-]?\d{1,3}(?:\.\d+)?\s?%)", t)
+            m_usd=re.search(r"\$[\d,]+(?:\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
+            if not (m_pct or m_usd): continue
+            num=m_pct.group(1) if m_pct else m_usd.group(0)
+            out.append({"num":num,"sub":t,"desc":a.get("domain","")})
+        return out[:6]
+    except Exception:
+        return []
 
 def refresh_im_async():
     def run():
         try:
-            @st.cache_data(ttl=600)
-            def pct_30d(sym:str):
-                try:
-                    d=yf.Ticker(sym).history(period="45d", interval="1d")
-                    if d is None or d.empty or d["Close"].dropna().shape[0] < 5: return None
-                    c=d["Close"].dropna(); first=float(c.iloc[0]); last=float(c.iloc[-1])
-                    return (last/first - 1.0)*100.0
-                except: return None
-
             live=[]
             for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F)","LE=F"),("Cerdo (HE=F)","HE=F")]:
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
-                    live.append({"num":f"{sign}{p:.1f}%","sub":f"{label} · cambio 30D",
-                                 "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
+                    live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
+                                 "desc":"Variación de cierre a cierre (30 días)."})
 
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
@@ -455,9 +467,10 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-if is_stale(hw_payload, 15*60) or needs_bootstrap_hw(hw_payload):
+# Lanzar refrescos si está viejo (Health cada 15m, Insights cada 10m)
+if is_stale(hw_payload, 15*60):
     refresh_hw_async()
-if is_stale(im_payload, 10*60) or needs_bootstrap_im(im_payload):
+if is_stale(im_payload, 10*60):
     refresh_im_async()
 
 # ====================== RENDER: HEALTH + INSIGHTS ======================
@@ -487,14 +500,14 @@ hw_html_str="".join(hw_html)
 items_im = im_payload.get("items", default_im()["items"])[:3]
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
-    num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","") or "&nbsp;"
-    im_html.append(
-        "<div class='im-item'>"
-        f"<div class='im-num'>{num}</div>"
-        f"<div class='im-sub'>{sub}</div>"
-        f"<div class='im-desc'>{desc}</div>"
-        "</div>"
-    )
+    num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
+    im_html.append(f"""
+      <div class="im-item">
+        <div class="im-num">{num}</div>
+        <div class="im-sub">{sub}</div>
+        <div class="im-desc">{desc if desc else "&nbsp;"}</div>
+      </div>
+    """)
 im_html.append("</div></div>")
 im_html_str="".join(im_html)
 
@@ -502,10 +515,8 @@ st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'
 
 # ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
-st.markdown(
-    f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
-    unsafe_allow_html=True,
-)
+st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
 
+# ====================== AUTOREFRESH ======================
 time.sleep(60)
 st.rerun()
