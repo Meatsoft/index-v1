@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.1 (fix render Insights + Health Watch ampliado)
+# LaSultana Meat Index — v2.8 (rotador fijo + Health híbrido + spacing unificado)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -18,7 +18,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar spacing entre TODOS los bloques (A,B,C iguales) */
+/* === Unificar spacing entre TODOS los bloques (A=B=C) === */
 .element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -38,13 +38,16 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:50px;font-weight:900;letter-spacing:.2px}
+.kpi .big{font-size:52px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:10px 0 8px}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-inline{font-size:.70em;color:var(--muted);font-weight:600;letter-spacing:.3px}
+.kpi .delta{margin-left:auto}          /* pega la flecha a la derecha */
+.kpi .right{display:flex;align-items:flex-start}
+.unit-inline{font-size:.7em;color:var(--muted);font-weight:600;letter-spacing:.3px}
 
-/* Variante: unidad debajo a la izquierda (USD/lb) */
-.kpi .value-wrap{display:flex;flex-direction:column;align-items:flex-start}
-.kpi .unit-below{font-size:.85em;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-top:6px}
+/* Unidad abajo del número (USD/lb) */
+.unit-bottom{
+  display:block; margin-top:8px; font-size:1.05em; font-weight:600; color:var(--muted);
+}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -61,39 +64,33 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador suave) */
-:root{
-  --im-total: 40.5s;      /* 35% más visible por slide (~13.5s c/u) */
-  --im-fade:  1.4s;       /* ~40% más transición */
-}
-.im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
+/* Market Insights (rotador, sin superposición ni “espejo”) */
+.im-card{min-height:190px}
 .im-wrap{
-  position:relative; width:100%; height:164px;
+  position:relative; width:100%; height:178px;
   overflow:hidden; border:1px solid var(--line); border-radius:12px;
-  padding:8px 10px 10px 10px;
-  display:flex; align-items:center; justify-content:center;
+  padding:10px; display:flex; align-items:center; justify-content:center;
   isolation:isolate; contain:content;
 }
 .im-item{
   position:absolute; inset:0;
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  opacity:0; transform:translateY(8px);
-  animation:imCycle var(--im-total) ease-in-out infinite;
+  opacity:0; transform:translateY(10px);
+  animation:imCycle 40.5s ease-in-out infinite; /* 35% más largo: 30s -> 40.5s */
   will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
-.im-item:nth-child(2){animation-delay:calc(var(--im-total)/3)}
-.im-item:nth-child(3){animation-delay:calc(2*var(--im-total)/3)}
+.im-item:nth-child(2){animation-delay:13.5s}
+.im-item:nth-child(3){animation-delay:27s}
+/* 40% transición más suave: ventanas más largas de blend */
 @keyframes imCycle{
-  0%   {opacity:0; transform:translateY(8px)}
-  3.5% {opacity:1; transform:translateY(2px)}
-  30%  {opacity:1; transform:translateY(0)}
-  33.5%{opacity:0; transform:translateY(-2px)}
-  100% {opacity:0; transform:translateY(-2px)}
+  0%, 6%   {opacity:0; transform:translateY(10px)}
+  10%, 36% {opacity:1; transform:translateY(0)}
+  40%, 100%{opacity:0; transform:translateY(-6px)}
 }
-.im-num{font-size:58px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
-.im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:4px 0 6px 0}
-.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
+.im-num{font-size:60px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 10px 0;text-align:center}
+.im-sub{font-size:18px;color:var(--txt);opacity:.95;line-height:1.25;margin:2px 0 8px 0;text-align:center}
+.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:0 14px;text-align:center}
 
 /* Footer */
 .caption{color:var(--muted)!important;margin-top:8px}
@@ -180,21 +177,15 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ====================== FX & FUTUROS (USD/lb) ======================
+# ====================== FX & FUTUROS ======================
+SHOW_PER_LB = True   # si True, divide futuros entre 100 y muestra USD/lb
+
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
 fx,fx_chg=get_yahoo("MXN=X")
-lc,lc_chg=get_yahoo("LE=F")   # USD/100 lb
-lh,lh_chg=get_yahoo("HE=F")   # USD/100 lb
-
-def to_per_lb(px, ch):
-    px2 = (px/100.0) if px is not None else None
-    ch2 = (ch/100.0) if ch is not None else None
-    return px2, ch2
-
-lc,lc_chg = to_per_lb(lc, lc_chg)
-lh,lh_chg = to_per_lb(lh, lh_chg)
+lc,lc_chg=get_yahoo("LE=F")
+lh,lh_chg=get_yahoo("HE=F")
 
 def kpi_fx(title,val,chg):
     if val is None: val_html="<div class='big'>N/D</div>"; delta=""
@@ -206,23 +197,26 @@ def kpi_fx(title,val,chg):
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{val_html}</div>{delta}</div></div>"
 
-def kpi_cme_per_lb(title,price,chg):
+def kpi_cme(title,price,chg):
     if price is None:
-        price_html="<div class='value-wrap'><div class='big'>N/D</div><div class='unit-below'>USD/lb</div></div>"
-        delta_html=""
+        num="N/D"; unit="USD/100 lb" if not SHOW_PER_LB else "USD/lb"
+        price_html=f"<div class='big'>{num}<span class='unit-bottom'>{unit}</span></div>"; delta=""
     else:
-        price_html=f"<div class='value-wrap'><div class='big'>{fmt2(price)}</div><div class='unit-below'>USD/lb</div></div>"
-        if chg is None:
-            delta_html=""
+        p = price/100.0 if SHOW_PER_LB else price
+        unit="USD/lb" if SHOW_PER_LB else "USD/100 lb"
+        price_html=f"<div class='big'>{fmt2(p)}<span class='unit-bottom'>{unit}</span></div>"
+        if chg is None: delta=""
         else:
-            cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
-            delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
-    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta_html}</div></div>"
+            # si mostramos por libra, el delta también por libra (aprox escala/100)
+            d = chg/100.0 if SHOW_PER_LB else chg
+            cls="up" if d>=0 else "down"; arr="▲" if d>=0 else "▼"
+            delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(d))}</div>"
+    return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
-    kpi_cme_per_lb("Res en pie",lc,lc_chg),
-    kpi_cme_per_lb("Cerdo en pie",lh,lh_chg),
+    kpi_cme("Res en pie",lc,lc_chg),
+    kpi_cme("Cerdo en pie",lh,lh_chg),
 ])
 st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 
@@ -230,139 +224,110 @@ st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
-    def _safe_bullets(items):
-        bullets=[]
-        for it in items[:2]:
-            sev = it.get("severity","amb")
-            dot = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
-            bullets.append(f"{dot} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
-        return bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
-
+    """Resume en máx 2 bullets por país; si no hay, devuelve fallback."""
+    def fallback():
+        out={}
+        for c,its in groups.items():
+            bullets=[]
+            for it in its[:2]:
+                s="🔴" if it.get("severity")=="red" else ("🟠" if it.get("severity")=="amb" else "🟢")
+                bullets.append(f"{s} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
+            out[c]=bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
+        return out
+    if not OPENAI_API_KEY: return fallback()
     try:
-        if not OPENAI_API_KEY:
-            return {k:_safe_bullets(v) for k,v in groups.items()}
         payload={"model":"gpt-4o-mini",
                  "messages":[
-                    {"role":"system","content":"Resume en español, máx 2 bullets por país, sin inventar; incluye especie y antigüedad."},
+                    {"role":"system","content":"Devuelve JSON por país con hasta 2 bullets concisos en español. No inventes."},
                     {"role":"user","content":json.dumps(groups,ensure_ascii=False)}
                  ],
                  "temperature":0.2,"response_format":{"type":"json_object"}}
         r=requests.post("https://api.openai.com/v1/chat/completions",
                         headers={"Authorization":f"Bearer {OPENAI_API_KEY}","Content-Type":"application/json"},
-                        json=payload, timeout=12)
+                        json=payload, timeout=10)
         txt=r.json()["choices"][0]["message"]["content"]
         data=json.loads(txt)
-        out={}
-        for cc,items in groups.items():
-            arr = data.get(cc) if isinstance(data,dict) else None
-            out[cc] = arr[:2] if (isinstance(arr,list) and arr) else _safe_bullets(items)
-        return out
+        return data if isinstance(data,dict) else fallback()
     except Exception:
-        return {k:_safe_bullets(v) for k,v in groups.items()}
+        return fallback()
 
-def ai_metrics(items):
-    try:
-        if not OPENAI_API_KEY: return items
-        payload={"model":"gpt-4o-mini",
-                 "messages":[
-                    {"role":"system","content":"Devuelve lista JSON de objetos {num, sub, desc}. No inventes; resume desc."},
-                    {"role":"user","content":json.dumps(items,ensure_ascii=False)}
-                 ],
-                 "temperature":0.2,"response_format":{"type":"json_object"}}
-        r=requests.post("https://api.openai.com/v1/chat/completions",
-                        headers={"Authorization":f"Bearer {OPENAI_API_KEY}","Content-Type":"application/json"},
-                        json=payload, timeout=12)
-        data=json.loads(r.json()["choices"][0]["message"]["content"])
-        if isinstance(data,list): return data
-        if isinstance(data,dict) and "items" in data and isinstance(data["items"],list): return data["items"]
-        return items
-    except Exception:
-        return items
-
-# ====================== GDELT (Health ampliado) ======================
+# ====================== GDELT ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
-
 DISEASE_Q=("("
-           "avian%20influenza%20OR%20HPAI%20OR%20H5N1%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
-           "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS%20OR%20Newcastle%20disease%20OR%20Lumpy%20Skin%20Disease)")
-
-COUNTRY_TOKENS = {
-    "US": ['"United States"', "USA", "Estados Unidos", "U.S."],
-    "BR": ["Brasil", "Brazil"],
-    "MX": ["México", "Mexico"]
-}
-def _ctoks(cc: str) -> str:
-    toks = COUNTRY_TOKENS.get(cc, [])
-    joined = "%20OR%20".join([requests.utils.quote(t) for t in toks])
-    return f"({joined})" if joined else ""
-
-def _severity(title:str)->str:
+           "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
+           "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
+SPECIES_REGEX=[(r"\b(pollo|aves|broiler|chicken)\b","Pollo"),
+               (r"\b(pavo|turkey)\b","Pavo"),
+               (r"\b(cerdo|swine|hog|pork)\b","Cerdo"),
+               (r"\b(res|bovine|cattle)\b","Res")]
+def detect_species(text:str)->str:
+    u=text.lower()
+    for pat,label in SPECIES_REGEX:
+        if re.search(pat,u): return label
+    return "Ganado"
+def severity(title:str)->str:
     u=title.lower()
     if any(k in u for k in ["confirmed","confirmado","quarantine","cuarentena","culling","sacrificio","outbreak","brote","emergency"]): return "red"
     if any(k in u for k in ["detected","detección","suspected","sospecha","cases","casos","alert"]): return "amb"
     return "green"
-def _species(text:str)->str:
-    u=text.lower()
-    if any(k in u for k in ["chicken","pollo","broiler","aves"]): return "Pollo"
-    if any(k in u for k in ["turkey","pavo"]): return "Pavo"
-    if any(k in u for k in ["swine","hog","pork","cerdo"]): return "Cerdo"
-    if any(k in u for k in ["cattle","bovine","res"]): return "Res"
-    return "Ganado"
+
+def _gdelt(country_code:str, timespan="30d", maxrecords=40):
+    try:
+        r=requests.get(GDELT_DOC, params={
+            "query":f"{DISEASE_Q} sourcecountry:{country_code}",
+            "mode":"ArtList","format":"json","timespan":timespan,
+            "maxrecords":str(maxrecords),"sort":"DateDesc"
+        }, headers=COMMON_HEADERS, timeout=7)
+        if r.status_code!=200: return []
+        arts=(r.json() or {}).get("articles",[]) or []
+        now=dt.datetime.utcnow(); out=[]
+        for a in arts:
+            t=a.get("title","").strip()
+            if not t: continue
+            dom=a.get("domain",""); seen=a.get("seendate","")
+            when=""
+            try:
+                d=dt.datetime.strptime(seen,"%Y%m%d%H%M%S")
+                minutes=(now-d).total_seconds()/60.0
+                when=humanize_delta(minutes)
+            except: pass
+            out.append({"title":t,"url":a.get("url",""),"domain":dom,"when_txt":when,
+                        "species":detect_species(t),"severity":severity(t)})
+        rank={"red":0,"amb":1,"green":2}
+        out=sorted(out, key=lambda x: rank.get(x.get("severity","amb"),1))
+        return out[:maxrecords]
+    except Exception:
+        return []
 
 @st.cache_data(ttl=900)
-def gdelt_search(cc: str, timespan="90d", maxrecords=40):
-    def _fetch(params):
-        try:
-            r=requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=10)
-            if r.status_code!=200: return []
-            return (r.json() or {}).get("articles",[]) or []
-        except Exception:
-            return []
-    # A) sourcecountry
-    params_a = {
-        "query": f"{DISEASE_Q} sourcecountry:{cc}",
-        "mode":"ArtList","format":"json","timespan":timespan,
-        "maxrecords":str(maxrecords),"sort":"DateDesc"
-    }
-    arts=_fetch(params_a)
+def gdelt_recent(cc:str): return _gdelt(cc, "30d", 30)
 
-    # B) menciones país + ES/EN
-    if not arts:
-        q_b=f"{DISEASE_Q}%20AND%20{_ctoks(cc)}%20AND%20(sourcelang:English%20OR%20sourcelang:Spanish)"
-        params_b={"query":q_b,"mode":"ArtList","format":"json","timespan":timespan,
-                  "maxrecords":str(maxrecords),"sort":"DateDesc"}
-        arts=_fetch(params_b)
+@st.cache_data(ttl=3600)
+def gdelt_history(cc:str): return _gdelt(cc, "180d", 60)
 
-    # C) global + filtrar por tokens del país en título
-    if not arts:
-        params_c={"query":DISEASE_Q,"mode":"ArtList","format":"json","timespan":timespan,
-                  "maxrecords":str(maxrecords*2),"sort":"DateDesc"}
-        allc=_fetch(params_c)
-        toks=[t.strip('"').lower() for t in COUNTRY_TOKENS.get(cc,[])]
-        def _hit(title): 
-            u=title.lower()
-            return any(t in u for t in toks)
-        arts=[a for a in allc if _hit(a.get("title",""))]
+@st.cache_data(ttl=43200)
+def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
+    try:
+        r=requests.get(GDELT_DOC, params={
+            "query":query,"mode":"ArtList","format":"json","timespan":timespan,
+            "maxrecords":str(maxrecords),"sort":"DateDesc"
+        }, headers=COMMON_HEADERS, timeout=7)
+        if r.status_code!=200: return []
+        arts=(r.json() or {}).get("articles",[]) or []
+        out=[]
+        for a in arts:
+            t=a.get("title","")
+            m_pct=re.search(r"([+-]?\d{1,3}(?:\.\d+)?\s?%)", t)
+            m_usd=re.search(r"\$[\d,]+(?:\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
+            if not (m_pct or m_usd): continue
+            num=m_pct.group(1) if m_pct else m_usd.group(0)
+            out.append({"num":num,"sub":t,"desc":a.get("domain","")})
+        return out[:6]
+    except Exception:
+        return []
 
-    now=dt.datetime.utcnow(); out=[]
-    for a in arts:
-        t=(a.get("title") or "").strip()
-        if not t: continue
-        dom=a.get("domain",""); seen=a.get("seendate","")
-        when=""
-        try:
-            d=dt.datetime.strptime(seen,"%Y%m%d%H%M%S")
-            minutes=(now-d).total_seconds()/60.0
-            when=humanize_delta(minutes)
-        except: pass
-        out.append({"title":t,"url":a.get("url",""),"domain":dom,"when_txt":when,
-                    "species":_species(t),"severity":_severity(t)})
-    rank={"red":0,"amb":1,"green":2}
-    out=sorted(out, key=lambda x: rank.get(x.get("severity","amb"),1))
-    return out[:maxrecords]
-
-# ====================== SNAPSHOTS & REFRESCOS ======================
+# ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
 DATA_DIR = Path(".")
 HW_FILE = DATA_DIR / "hw_snapshot.json"
 IM_FILE = DATA_DIR / "im_snapshot.json"
@@ -388,88 +353,95 @@ def default_im():
         ]
     }
 
-def _merge_keep_nonempty(old_payload, new_payload):
-    try:
-        c=new_payload.get("counts",{})
-        if isinstance(c,dict) and sum(c.values())==0:
-            return old_payload
-        return new_payload
-    except:
-        return old_payload
-
 hw_payload = load_json(HW_FILE, default_hw())
 im_payload = load_json(IM_FILE, default_im())
 
 def refresh_hw_async():
     def run():
         try:
-            US_items=gdelt_search("US"); BR_items=gdelt_search("BR"); MX_items=gdelt_search("MX")
-            counts={"US":len(US_items),"BR":len(BR_items),"MX":len(MX_items)}
-            groups={"US":US_items[:6],"BR":BR_items[:6],"MX":MX_items[:6]}
-            summary = ai_health(groups)
-            new_payload={"updated": dt.datetime.utcnow().isoformat(), "counts": counts, "summary": summary}
-            merged=_merge_keep_nonempty(load_json(HW_FILE, default_hw()), new_payload)
-            save_json(HW_FILE, merged)
-        except: pass
+            # Modo híbrido: primero 30d, si vacío completar con 180d
+            data={}
+            counts={}
+            for cc in ["US","BR","MX"]:
+                recent = gdelt_recent(cc)
+                hist   = gdelt_history(cc) if not recent else []
+                counts[cc]=len(recent)
+                bullets=[]
+                # prioridad: rojas/ámbar recientes
+                for it in recent:
+                    if it.get("severity") in ("red","amb"):
+                        s="🔴" if it["severity"]=="red" else "🟠"
+                        bullets.append(f"{s} {it['species']} — {it['title']} ({it['domain']} · {it['when_txt']})")
+                        if len(bullets)>=2: break
+                # si no hay, muestra el último evento histórico (atenuado)
+                if not bullets and hist:
+                    it=hist[0]
+                    bullets.append(f"🟢 Último evento: {it['species']} — {it['title']} ({it['domain']} · {it['when_txt']})")
+                if not bullets:
+                    bullets=["🟢 Sin novedades significativas (última revisión reciente)."]
+                data[cc]=bullets[:2]
+            payload={"updated": dt.datetime.utcnow().isoformat(), "counts": counts, "summary": data}
+            save_json(HW_FILE, payload)
+        except Exception:
+            pass
     threading.Thread(target=run, daemon=True).start()
-
-@st.cache_data(ttl=600)
-def pct_30d(sym:str):
-    try:
-        d=yf.Ticker(sym).history(period="45d", interval="1d")
-        if d is None or d.empty or d["Close"].dropna().shape[0] < 5: return None
-        c=d["Close"].dropna(); first=float(c.iloc[0]); last=float(c.iloc[-1])
-        return (last/first - 1.0)*100.0
-    except: return None
-
-@st.cache_data(ttl=43200)
-def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
-    try:
-        r=requests.get(GDELT_DOC, params={
-            "query":query,"mode":"ArtList","format":"json","timespan":timespan,
-            "maxrecords":str(maxrecords),"sort":"DateDesc"
-        }, headers=COMMON_HEADERS, timeout=8)
-        if r.status_code!=200: return []
-        arts=(r.json() or {}).get("articles",[]) or []
-        out=[]
-        for a in arts:
-            t=a.get("title","")
-            m_pct=re.search(r"([+-]?\d{1,3}(?:\.\d+)?\s?%)", t)
-            m_usd=re.search(r"\$[\d,]+(?:\.\d+)?\s?(?:B|M|million|billion)", t, re.I)
-            if not (m_pct or m_usd): continue
-            num=m_pct.group(1) if m_pct else m_usd.group(0)
-            out.append({"num":num,"sub":t,"desc":a.get("domain","")})
-        return out[:6]
-    except Exception:
-        return []
 
 def refresh_im_async():
     def run():
         try:
+            @st.cache_data(ttl=600)
+            def pct_30d(sym:str):
+                try:
+                    d=yf.Ticker(sym).history(period="45d", interval="1d")
+                    if d is None or d.empty or d["Close"].dropna().shape[0] < 5: return None
+                    c=d["Close"].dropna(); first=float(c.iloc[0]); last=float(c.iloc[-1])
+                    return (last/first - 1.0)*100.0
+                except: return None
+
             live=[]
             for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F)","LE=F"),("Cerdo (HE=F)","HE=F")]:
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
                     live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
-                                 "desc":"Variación de cierre a cierre (30 días)."})
+                                 "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
+
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
             news += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
             news += gdelt_numbers("(Mexico%20chicken%20imports%20OR%20México%20importaciones%20pollo)")
 
             items = (live[:3] + news[:3])[:3]
-            items = ai_metrics(items)
+            if OPENAI_API_KEY:
+                try:
+                    payload={"model":"gpt-4o-mini",
+                             "messages":[
+                                {"role":"system","content":"Devuelve lista JSON de objetos {num, sub, desc}. Reduce títulos largos y no inventes."},
+                                {"role":"user","content":json.dumps(items,ensure_ascii=False)}
+                             ],
+                             "temperature":0.2,"response_format":{"type":"json_object"}}
+                    r=requests.post("https://api.openai.com/v1/chat/completions",
+                                    headers={"Authorization":f"Bearer {OPENAI_API_KEY}","Content-Type":"application/json"},
+                                    json=payload, timeout=10)
+                    parsed=json.loads(r.json()["choices"][0]["message"]["content"])
+                    if isinstance(parsed,list): items=parsed
+                    elif isinstance(parsed,dict) and "items" in parsed: items=parsed["items"]
+                except Exception:
+                    pass
+
             if not items: items = default_im()["items"]
             while len(items) < 3: items += items
+
             payload={"updated": dt.datetime.utcnow().isoformat(), "items": items[:3]}
             save_json(IM_FILE, payload)
-        except: pass
+        except Exception:
+            pass
     threading.Thread(target=run, daemon=True).start()
 
-if is_stale(hw_payload, 15*60):
+# Disparar refresh en bg si está viejo
+if is_stale(hw_payload, 15*60):  # 15 min
     refresh_hw_async()
-if is_stale(im_payload, 10*60):
+if is_stale(im_payload, 10*60):  # 10 min
     refresh_im_async()
 
 # ====================== RENDER: HEALTH + INSIGHTS ======================
@@ -497,29 +469,29 @@ hw_html.append("</div>")
 hw_html_str="".join(hw_html)
 
 items_im = im_payload.get("items", default_im()["items"])[:3]
-im_html = ["<div class='card im-card'><div class='im-wrap'>"]
+im_parts = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
-    im_html.append(f"""
+    # No escapar como texto: imprimimos HTML directo
+    im_parts.append(f"""
       <div class="im-item">
         <div class="im-num">{num}</div>
         <div class="im-sub">{sub}</div>
         <div class="im-desc">{desc if desc else "&nbsp;"}</div>
       </div>
     """)
-im_html.append("</div></div>")
-im_html_str="".join(im_html)
+im_parts.append("</div></div>")
+im_html_str="".join(im_parts)
 
-# Render en 3 llamadas separadas para evitar que Markdown escape el HTML
-st.markdown("<div class='sec-grid'>", unsafe_allow_html=True)
-st.markdown(f"<div class='card'>{hw_html_str}</div>", unsafe_allow_html=True)
-st.markdown(im_html_str, unsafe_allow_html=True)
-st.markdown("</div>", unsafe_allow_html=True)
+st.markdown(f"<div class='sec-grid'><div class='card'>{hw_html_str}</div>{im_html_str}</div>", unsafe_allow_html=True)
 
-# ====================== FOOTER ======================
+# ====================== FOOTER (hora Monterrey) ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
-st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
+st.markdown(
+    f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>",
+    unsafe_allow_html=True,
+)
 
-# ====================== AUTOREFRESH ======================
+# Refresco gentle
 time.sleep(60)
 st.rerun()
