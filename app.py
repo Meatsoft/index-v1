@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.0 (Health Watch FIX + layout pulido)
+# LaSultana Meat Index — v3.1 (fix render Insights + Health Watch ampliado)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -44,7 +44,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 
 /* Variante: unidad debajo a la izquierda (USD/lb) */
 .kpi .value-wrap{display:flex;flex-direction:column;align-items:flex-start}
-.kpi .unit-below{font-size:.80em;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-top:6px}
+.kpi .unit-below{font-size:.85em;color:var(--muted);font-weight:600;letter-spacing:.3px;margin-top:6px}
 
 /* 2 columnas: Health (izq) + Insights (der) */
 .sec-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
@@ -61,16 +61,16 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px}
 .dot.red{background:var(--down)} .dot.amb{background:#f0ad4e} .dot.green{background:#3cb371}
 
-/* Market Insights (rotador suave sin “espejo”) */
+/* Market Insights (rotador suave) */
 :root{
-  --im-total: 40.5s;      /* 35% más visible por slide (≈13.5s c/u) */
-  --im-fade:  1.4s;       /* ~40% más de transición */
+  --im-total: 40.5s;      /* 35% más visible por slide (~13.5s c/u) */
+  --im-fade:  1.4s;       /* ~40% más transición */
 }
 .im-card{display:flex; align-items:center; justify-content:center; min-height:176px}
 .im-wrap{
   position:relative; width:100%; height:164px;
   overflow:hidden; border:1px solid var(--line); border-radius:12px;
-  padding:8px 10px 6px 10px;
+  padding:8px 10px 10px 10px;
   display:flex; align-items:center; justify-content:center;
   isolation:isolate; contain:content;
 }
@@ -86,9 +86,9 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .im-item:nth-child(3){animation-delay:calc(2*var(--im-total)/3)}
 @keyframes imCycle{
   0%   {opacity:0; transform:translateY(8px)}
-  3.5% {opacity:1; transform:translateY(2px)}   /* fade-in ~1.4s */
-  30%  {opacity:1; transform:translateY(0)}     /* visible ~13.5s */
-  33.5%{opacity:0; transform:translateY(-2px)}  /* fade-out ~1.4s */
+  3.5% {opacity:1; transform:translateY(2px)}
+  30%  {opacity:1; transform:translateY(0)}
+  33.5%{opacity:0; transform:translateY(-2px)}
   100% {opacity:0; transform:translateY(-2px)}
 }
 .im-num{font-size:58px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 6px 0}
@@ -138,7 +138,7 @@ if Path("ILSMeatIndex.png").exists():
     st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
-# ====================== CINTA (USD, firmes) ======================
+# ====================== CINTA ======================
 COMPANIES_USD=[("Tyson Foods","TSN"),("Pilgrim’s Pride","PPC"),("JBS","JBS"),("BRF","BRFS"),
                ("Hormel Foods","HRL"),("Seaboard","SEB"),("Minerva","MRVSY"),
                ("Cal-Maine Foods","CALM"),("Vital Farms","VITL"),("WH Group","WHGLY"),
@@ -180,15 +180,14 @@ st.markdown(f"""
 </div></div>
 """, unsafe_allow_html=True)
 
-# ====================== FX & FUTUROS (mostrar USD/lb) ======================
+# ====================== FX & FUTUROS (USD/lb) ======================
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
 fx,fx_chg=get_yahoo("MXN=X")
-lc,lc_chg=get_yahoo("LE=F")   # Live Cattle (USD/100 lb)
-lh,lh_chg=get_yahoo("HE=F")   # Lean Hogs (USD/100 lb)
+lc,lc_chg=get_yahoo("LE=F")   # USD/100 lb
+lh,lh_chg=get_yahoo("HE=F")   # USD/100 lb
 
-# Convertir a USD/lb (dividir entre 100 precio y cambio)
 def to_per_lb(px, ch):
     px2 = (px/100.0) if px is not None else None
     ch2 = (ch/100.0) if ch is not None else None
@@ -220,7 +219,6 @@ def kpi_cme_per_lb(title,price,chg):
             delta_html=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta_html}</div></div>"
 
-# Render 3 KPIs en un bloque
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg),
     kpi_cme_per_lb("Res en pie",lc,lc_chg),
@@ -232,14 +230,13 @@ st.markdown(f"<div class='grid'>{kpi_html}</div>", unsafe_allow_html=True)
 OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY","").strip()
 
 def ai_health(groups):
-    """Resume 2 bullets por país. Si falla/ausente, fallback con _safe_bullets."""
     def _safe_bullets(items):
         bullets=[]
         for it in items[:2]:
             sev = it.get("severity","amb")
             dot = "🔴" if sev=="red" else ("🟠" if sev=="amb" else "🟢")
             bullets.append(f"{dot} {it.get('species','Ganado')} — {it.get('title','').strip()} ({it.get('domain','')} · {it.get('when_txt','')})")
-        return bullets or ["Sin novedades significativas (última revisión reciente)."]
+        return bullets or ["🟢 Sin novedades significativas (última revisión reciente)."]
 
     try:
         if not OPENAI_API_KEY:
@@ -255,18 +252,15 @@ def ai_health(groups):
                         json=payload, timeout=12)
         txt=r.json()["choices"][0]["message"]["content"]
         data=json.loads(txt)
-        # Asegurar siempre 2 bullets por país
         out={}
         for cc,items in groups.items():
             arr = data.get(cc) if isinstance(data,dict) else None
-            if not arr: out[cc]=_safe_bullets(items)
-            else: out[cc]=arr[:2]
+            out[cc] = arr[:2] if (isinstance(arr,list) and arr) else _safe_bullets(items)
         return out
     except Exception:
         return {k:_safe_bullets(v) for k,v in groups.items()}
 
 def ai_metrics(items):
-    """Mejora redacción de Market Insights (opcional)."""
     try:
         if not OPENAI_API_KEY: return items
         payload={"model":"gpt-4o-mini",
@@ -285,20 +279,19 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ====================== GDELT (Health FIX) ======================
+# ====================== GDELT (Health ampliado) ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
 DISEASE_Q=("("
-           "avian%20influenza%20OR%20HPAI%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
-           "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS)")
+           "avian%20influenza%20OR%20HPAI%20OR%20H5N1%20OR%20bird%20flu%20OR%20African%20swine%20fever%20"
+           "OR%20ASF%20OR%20foot-and-mouth%20OR%20FMD%20OR%20PRRS%20OR%20Newcastle%20disease%20OR%20Lumpy%20Skin%20Disease)")
 
 COUNTRY_TOKENS = {
     "US": ['"United States"', "USA", "Estados Unidos", "U.S."],
     "BR": ["Brasil", "Brazil"],
     "MX": ["México", "Mexico"]
 }
-
 def _ctoks(cc: str) -> str:
     toks = COUNTRY_TOKENS.get(cc, [])
     joined = "%20OR%20".join([requests.utils.quote(t) for t in toks])
@@ -318,8 +311,7 @@ def _species(text:str)->str:
     return "Ganado"
 
 @st.cache_data(ttl=900)
-def gdelt_search(cc: str, timespan="30d", maxrecords=24):
-    """A) sourcecountry; B) fallback por mención de país + idioma ES/EN. Normaliza y ordena por severidad."""
+def gdelt_search(cc: str, timespan="90d", maxrecords=40):
     def _fetch(params):
         try:
             r=requests.get(GDELT_DOC, params=params, headers=COMMON_HEADERS, timeout=10)
@@ -327,7 +319,7 @@ def gdelt_search(cc: str, timespan="30d", maxrecords=24):
             return (r.json() or {}).get("articles",[]) or []
         except Exception:
             return []
-    # A) Medio del país
+    # A) sourcecountry
     params_a = {
         "query": f"{DISEASE_Q} sourcecountry:{cc}",
         "mode":"ArtList","format":"json","timespan":timespan,
@@ -335,12 +327,23 @@ def gdelt_search(cc: str, timespan="30d", maxrecords=24):
     }
     arts=_fetch(params_a)
 
-    # B) Fallback por mención del país + idioma
+    # B) menciones país + ES/EN
     if not arts:
         q_b=f"{DISEASE_Q}%20AND%20{_ctoks(cc)}%20AND%20(sourcelang:English%20OR%20sourcelang:Spanish)"
         params_b={"query":q_b,"mode":"ArtList","format":"json","timespan":timespan,
                   "maxrecords":str(maxrecords),"sort":"DateDesc"}
         arts=_fetch(params_b)
+
+    # C) global + filtrar por tokens del país en título
+    if not arts:
+        params_c={"query":DISEASE_Q,"mode":"ArtList","format":"json","timespan":timespan,
+                  "maxrecords":str(maxrecords*2),"sort":"DateDesc"}
+        allc=_fetch(params_c)
+        toks=[t.strip('"').lower() for t in COUNTRY_TOKENS.get(cc,[])]
+        def _hit(title): 
+            u=title.lower()
+            return any(t in u for t in toks)
+        arts=[a for a in allc if _hit(a.get("title",""))]
 
     now=dt.datetime.utcnow(); out=[]
     for a in arts:
@@ -359,7 +362,7 @@ def gdelt_search(cc: str, timespan="30d", maxrecords=24):
     out=sorted(out, key=lambda x: rank.get(x.get("severity","amb"),1))
     return out[:maxrecords]
 
-# ====================== SNAPSHOTS + REFRESCO EN 2° PLANO ======================
+# ====================== SNAPSHOTS & REFRESCOS ======================
 DATA_DIR = Path(".")
 HW_FILE = DATA_DIR / "hw_snapshot.json"
 IM_FILE = DATA_DIR / "im_snapshot.json"
@@ -369,8 +372,8 @@ def default_hw():
         "updated": dt.datetime.utcnow().isoformat(),
         "counts": {"US":0,"BR":0,"MX":0},
         "summary": {
-            "US": ["Sin novedades significativas (última revisión reciente)."],
-            "BR": ["Sin novedades significativas (última revisión reciente)."],
+            "US": ["🟢 Sin novedades significativas (última revisión reciente)."],
+            "BR": ["🟢 Sin novedades significativas (última revisión reciente)."],
             "MX": ["🟢 Sin novedades significativas (última revisión reciente)."],
         }
     }
@@ -386,7 +389,6 @@ def default_im():
     }
 
 def _merge_keep_nonempty(old_payload, new_payload):
-    """Si el fetch nuevo viene vacío, NO sobreescribas lo anterior."""
     try:
         c=new_payload.get("counts",{})
         if isinstance(c,dict) and sum(c.values())==0:
@@ -451,7 +453,6 @@ def refresh_im_async():
                     sign="+" if p>=0 else ""
                     live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D",
                                  "desc":"Variación de cierre a cierre (30 días)."})
-
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
             news += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
@@ -461,13 +462,11 @@ def refresh_im_async():
             items = ai_metrics(items)
             if not items: items = default_im()["items"]
             while len(items) < 3: items += items
-
             payload={"updated": dt.datetime.utcnow().isoformat(), "items": items[:3]}
             save_json(IM_FILE, payload)
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-# Lanzar refrescos si está viejo (Health cada 15m, Insights cada 10m)
 if is_stale(hw_payload, 15*60):
     refresh_hw_async()
 if is_stale(im_payload, 10*60):
@@ -511,9 +510,13 @@ for it in items_im:
 im_html.append("</div></div>")
 im_html_str="".join(im_html)
 
-st.markdown(f"<div class='sec-grid'>{'<div class=\"card\">'+hw_html_str+'</div>'+im_html_str}</div>", unsafe_allow_html=True)
+# Render en 3 llamadas separadas para evitar que Markdown escape el HTML
+st.markdown("<div class='sec-grid'>", unsafe_allow_html=True)
+st.markdown(f"<div class='card'>{hw_html_str}</div>", unsafe_allow_html=True)
+st.markdown(im_html_str, unsafe_allow_html=True)
+st.markdown("</div>", unsafe_allow_html=True)
 
-# ====================== FOOTER (hora Monterrey) ======================
+# ====================== FOOTER ======================
 local_now = dt.datetime.now(ZoneInfo("America/Monterrey"))
 st.markdown(f"<div class='caption'>Actualizado: {local_now.strftime('%Y-%m-%d %H:%M:%S')}</div>", unsafe_allow_html=True)
 
