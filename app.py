@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.3 (fix insights code-block + sanitize + spark padding)
+# LaSultana Meat Index — v3.4 (Insights siempre poblado + USMEF latest)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -74,7 +74,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 }
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:13.5s}
-im-item:nth-child(3){animation-delay:27s}
+.im-item:nth-child(3){animation-delay:27s}
 @keyframes imCycle{
   0%,   8%   {opacity:0; transform:translateY(12px)}
   12%,  32%  {opacity:1; transform:translateY(2px)}
@@ -130,8 +130,7 @@ def looks_like_html(s: str) -> bool:
 
 # ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
-if Path("ILSMeatIndex.png").exists():
-    st.image("ILSMeatIndex.png", width=440)
+if Path("ILSMeatIndex.png").exists(): st.image("ILSMeatIndex.png", width=440)
 st.markdown("</div>", unsafe_allow_html=True)
 
 # ====================== CINTA ======================
@@ -180,7 +179,7 @@ st.markdown(f"""
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-SHOW_PER_LB = True   # mostrar USD/lb (divide LE=F / HE=F por 100)
+SHOW_PER_LB = True   # divide LE=F / HE=F entre 100
 
 fx,fx_chg=get_yahoo("MXN=X")
 lc,lc_chg=get_yahoo("LE=F")
@@ -298,7 +297,7 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ====================== GDELT (números/notas cortas) ======================
+# ====================== GDELT ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
@@ -323,6 +322,24 @@ def gdelt_numbers(query:str, timespan="45d", maxrecords=30):
     except Exception:
         return []
 
+@st.cache_data(ttl=3600)
+def gdelt_latest_from_domain(domain: str, timespan="180d"):
+    """Último titular del dominio (p.ej. USMEF)."""
+    try:
+        q=f"domainis:{domain}"
+        r=requests.get(GDELT_DOC, params={
+            "query":q,"mode":"ArtList","format":"json","timespan":timespan,
+            "maxrecords":"1","sort":"DateDesc"
+        }, headers=COMMON_HEADERS, timeout=8)
+        arts=(r.json() or {}).get("articles",[]) or []
+        if not arts: return None
+        a=arts[0]
+        title=a.get("title","").strip()
+        if not title: return None
+        return {"num":"USMEF", "sub":title, "desc":domain}
+    except Exception:
+        return None
+
 # ====================== SNAPSHOT + REFRESCO INSIGHTS ======================
 DATA_DIR = Path(".")
 IM_FILE = DATA_DIR / "im_snapshot.json"
@@ -341,7 +358,6 @@ def sanitize_items(items):
     safe=[]
     for it in items[:3]:
         n = it.get("num","—"); s = it.get("sub",""); d = it.get("desc","")
-        # Descartar entradas que parezcan HTML
         if looks_like_html(n) or looks_like_html(s) or looks_like_html(d):
             n, s, d = "—", "Sin datos recientes", "—"
         n = html.escape(strip_tags(n))
@@ -358,8 +374,32 @@ def purge_if_dirty(payload):
 
 im_payload = load_json(IM_FILE, default_im())
 im_payload, dirty = purge_if_dirty(im_payload)
-if dirty:
-    save_json(IM_FILE, im_payload)
+if dirty: save_json(IM_FILE, im_payload)
+
+def build_live_items_now():
+    """Construye 3 tarjetas inmediatamente (no espera hilo)."""
+    def pct_30d_now(sym:str):
+        try:
+            d=yf.Ticker(sym).history(period="45d", interval="1d")
+            c=d["Close"].dropna()
+            if c.shape[0] < 5: return None
+            first=float(c.iloc[0]); last=float(c.iloc[-1])
+            return (last/first - 1.0)*100.0
+        except: return None
+
+    live=[]
+    for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F, per lb)","LE=F"),("Cerdo (HE=F, per lb)","HE=F")]:
+        p=pct_30d_now(sym)
+        if p is not None:
+            if "LE=F" in sym or "HE=F" in sym:
+                # El % no cambia por la división entre 100; es cte de escala.
+                pass
+            sign="+" if p>=0 else ""
+            live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D", "desc":"Yahoo Finance"})
+
+    usmef = gdelt_latest_from_domain("usmef.org")
+    if usmef: live = (live[:2] + [usmef])[:3]
+    return sanitize_items(live) if live else sanitize_items(default_im()["items"])
 
 def refresh_im_async():
     def run():
@@ -374,38 +414,46 @@ def refresh_im_async():
                 except: return None
 
             live=[]
-            for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F)","LE=F"),("Cerdo (HE=F)","HE=F")]:
+            for label,sym in [("USD/MXN","MXN=X"),("Res (LE=F, per lb)","LE=F"),("Cerdo (HE=F, per lb)","HE=F")]:
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
-                    suffix=" (per lb)" if ("LE=F" in sym or "HE=F" in sym) and True else ""
-                    live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label}{suffix} · cambio 30D",
-                                 "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
+                    live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label} · cambio 30D", "desc":"Variación 30D (Yahoo Finance)"})
 
             news=[]
             news += gdelt_numbers("(Brazil%20poultry%20exports%20OR%20ABPA%20frango)")
             news += gdelt_numbers("(USMEF%20pork%20exports%20OR%20USMEF%20beef%20exports)")
             news += gdelt_numbers("(Mexico%20chicken%20imports%20OR%20México%20importaciones%20pollo)")
+            usmef = gdelt_latest_from_domain("usmef.org")
+            if usmef: news = [usmef] + news
 
-            items = (live[:3] + news[:3])[:3]
+            items = (live[:2] + news[:1])  # 2 señales + 1 USMEF/noticia
             items = ai_metrics(items)
             items = sanitize_items(items)
-            if not items: items = default_im()["items"]
-            while len(items) < 3: items += items
+            if not items: items = build_live_items_now()
 
             payload={"updated": dt.datetime.utcnow().isoformat(), "items": items[:3]}
             save_json(IM_FILE, payload)
-        except: pass
+        except: 
+            try:
+                payload={"updated": dt.datetime.utcnow().isoformat(), "items": build_live_items_now()}
+                save_json(IM_FILE, payload)
+            except:
+                pass
     threading.Thread(target=run, daemon=True).start()
 
-# refresco si está viejo o venimos de snapshot sucio
+# refresco si está viejo o snapshot sucio
 if is_stale(im_payload, 10*60) or dirty:
     refresh_im_async()
 
-# ====================== RENDER: INSIGHTS (SIN sangría en HTML) ======================
-items_im = sanitize_items(im_payload.get("items", default_im()["items"]))[:3]
+# ====================== RENDER: INSIGHTS (con fallback sin esperar) ======================
+items_im = sanitize_items(im_payload.get("items", []))[:3]
+# Si el snapshot trae solo “Sin datos…”, llenamos ya mismo:
+if not items_im or all((it.get("sub","").startswith("Sin datos") for it in items_im)):
+    items_im = build_live_items_now()
+
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
-for it in items_im:
+for it in items_im[:3]:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
     im_html.append(
         f"<div class='im-item'><div class='im-num'>{num}</div>"
