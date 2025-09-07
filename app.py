@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.1 (sparklines con más aire, USD/lb estable, Insights sin código)
+# LaSultana Meat Index — v3.2
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -19,7 +19,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Spacing uniforme entre bloques */
+/* Spacing uniforme */
 .element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -42,21 +42,21 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .kpi .big{font-size:56px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:12px 0 8px 0}
 .kpi .delta{font-size:20px;margin-left:12px}
 
-/* Tamaño fijo para “USD/lb” / “USD/100 lb” (evita saltos) */
+/* “USD/lb” tamaño estable */
 .unit-bottom{
   display:block;
-  font-size:15px;         /* <-- tamaño estable */
+  font-size:18px;        /* <-- un poco más grande */
   color:var(--muted);
-  font-weight:700;
+  font-weight:800;
   letter-spacing:.3px;
-  margin-top:8px;
+  margin-top:10px;
 }
 
-/* Sparklines (más aire arriba/abajo) */
-.spark{height:56px;margin:10px 0 16px 0}   /* más espacio con título y número */
-.spark svg{width:100%;height:56px;display:block;opacity:.95}
+/* Sparklines con MÁS padding */
+.spark{height:64px;margin:14px 0 20px 0}
+.spark svg{width:100%;height:64px;display:block;opacity:.95}
 
-/* Market Insights (rotador suave + sin “espejo”) */
+/* Market Insights (rotador suave; sin “espejo”) */
 .im-card{display:flex; align-items:center; justify-content:center;}
 .im-wrap{
   position:relative; width:100%; height:176px;
@@ -73,7 +73,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
   will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
-.im-item:nth-child(2){animation-delay:13.5s}  /* <-- faltaba el punto en versiones anteriores */
+.im-item:nth-child(2){animation-delay:13.5s}
 .im-item:nth-child(3){animation-delay:27s}
 @keyframes imCycle{
   0%,   8%   {opacity:0; transform:translateY(12px)}
@@ -124,6 +124,11 @@ def is_stale(payload: dict, max_age_sec: int) -> bool:
 def strip_tags(s: str) -> str:
     if not isinstance(s, str): return s
     return re.sub(r"<[^>]+>", "", s)
+
+def looks_like_html(s: str) -> bool:
+    return isinstance(s, str) and (
+        "<" in s or "&lt;" in s or "class=" in s or "</" in s
+    )
 
 # ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -177,7 +182,7 @@ st.markdown(f"""
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-SHOW_PER_LB = True   # Muestra USD/lb (divide LE=F y HE=F entre 100)
+SHOW_PER_LB = True   # mostrar USD/lb (divide LE=F / HE=F por 100)
 
 fx,fx_chg=get_yahoo("MXN=X")
 lc,lc_chg=get_yahoo("LE=F")
@@ -192,7 +197,7 @@ def adjust_per_lb(price, chg):
 lc, lc_chg = adjust_per_lb(lc, lc_chg)
 lh, lh_chg = adjust_per_lb(lh, lh_chg)
 
-# ======== Series 30D y sparkline SVG (más padding interno) ========
+# ======== Series 30D y sparkline SVG ========
 @st.cache_data(ttl=300)
 def series_30d(sym:str):
     try:
@@ -203,7 +208,7 @@ def series_30d(sym:str):
         return vals
     except: return None
 
-def normalize(vals, w=300, h=56, pad=12):
+def normalize(vals, w=300, h=64, pad=16):
     if not vals or len(vals)<2:
         return [(pad,h/2),(w-pad,h/2)]
     mn=min(vals); mx=max(vals); span=(mx-mn) or 1e-9
@@ -217,7 +222,7 @@ def normalize(vals, w=300, h=56, pad=12):
 
 def sparkline_svg(vals, color="var(--muted)"):
     if not vals or len(vals)<2: return ""
-    w,h=300,56
+    w,h=300,64
     pts=normalize(vals,w,h)
     path="M " + " L ".join(f"{x:.2f} {y:.2f}" for x,y in pts)
     lx,ly=pts[-1]
@@ -334,20 +339,29 @@ def default_im():
         ]
     }
 
-im_payload = load_json(IM_FILE, default_im())
-
 def sanitize_items(items):
     safe=[]
     for it in items[:3]:
-        num = html.escape(strip_tags(it.get("num","—")))
-        sub = html.escape(strip_tags(it.get("sub","")))
-        desc= html.escape(strip_tags(it.get("desc","")))
-        safe.append({"num":num, "sub":sub, "desc":desc})
+        n = it.get("num","—"); s = it.get("sub",""); d = it.get("desc","")
+        # Si huele a HTML, descartamos ese item
+        if looks_like_html(n) or looks_like_html(s) or looks_like_html(d):
+            n, s, d = "—", "Sin datos recientes", "—"
+        # Strip + escape por si acaso
+        n = html.escape(strip_tags(n))
+        s = html.escape(strip_tags(s))
+        d = html.escape(strip_tags(d))
+        safe.append({"num":n, "sub":s, "desc":d})
     return safe
 
-# Si el snapshot trae HTML, reseteo al instante
-if any("<" in (it.get("sub","")+it.get("desc","")) or "&lt;" in (it.get("sub","")+it.get("desc","")) for it in im_payload.get("items", [])):
-    im_payload = default_im()
+def purge_if_dirty(payload):
+    items = payload.get("items", [])
+    if any(looks_like_html(it.get("num","")) or looks_like_html(it.get("sub","")) or looks_like_html(it.get("desc","")) for it in items):
+        return default_im(), True
+    return payload, False
+
+im_payload = load_json(IM_FILE, default_im())
+im_payload, dirty = purge_if_dirty(im_payload)
+if dirty:
     save_json(IM_FILE, im_payload)
 
 def refresh_im_async():
@@ -387,7 +401,8 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
-if is_stale(im_payload, 10*60):
+# refresco si está viejo o venimos de snapshot sucio
+if is_stale(im_payload, 10*60) or dirty:
     refresh_im_async()
 
 # ====================== RENDER: INSIGHTS ======================
