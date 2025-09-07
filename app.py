@@ -1,7 +1,8 @@
-# LaSultana Meat Index — v3.0 (sparklines con padding + fix insights + USD/lb más grande)
+# LaSultana Meat Index — v3.1 (sparklines con más aire, USD/lb estable, Insights sin código)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
+import html
 import requests, streamlit as st, yfinance as yf
 
 st.set_page_config(page_title="LaSultana Meat Index", layout="wide")
@@ -18,7 +19,7 @@ html,body,.stApp{background:var(--bg)!important;color:var(--txt)!important;font-
 *{font-family:var(--font)!important}
 .block-container{max-width:1400px;padding-top:12px}
 
-/* Unificar spacing entre TODOS los bloques */
+/* Spacing uniforme entre bloques */
 .element-container{margin-bottom:12px !important;}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
 header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} footer{visibility:hidden}
@@ -38,39 +39,50 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:54px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:8px 0 8px 0}
+.kpi .big{font-size:56px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:12px 0 8px 0}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-bottom{font-size:.82em;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:8px} /* más grande que antes */
 
-/* Sparklines encima del número (más aire) */
-.spark{height:44px;margin:6px 0 10px 0}          /* espacio arriba/abajo */
-.spark svg{width:100%;height:44px;display:block;opacity:.95}
+/* Tamaño fijo para “USD/lb” / “USD/100 lb” (evita saltos) */
+.unit-bottom{
+  display:block;
+  font-size:15px;         /* <-- tamaño estable */
+  color:var(--muted);
+  font-weight:700;
+  letter-spacing:.3px;
+  margin-top:8px;
+}
 
-/* Market Insights (rotador suave) */
+/* Sparklines (más aire arriba/abajo) */
+.spark{height:56px;margin:10px 0 16px 0}   /* más espacio con título y número */
+.spark svg{width:100%;height:56px;display:block;opacity:.95}
+
+/* Market Insights (rotador suave + sin “espejo”) */
 .im-card{display:flex; align-items:center; justify-content:center;}
 .im-wrap{
   position:relative; width:100%; height:176px;
   overflow:hidden; border:1px solid var(--line); border-radius:12px;
-  padding:10px 12px 12px 12px; display:flex; align-items:center; justify-content:center;
+  padding:12px 14px 14px 14px;
+  display:flex; align-items:center; justify-content:center;
   isolation:isolate; contain:content;
 }
 .im-item{
-  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  opacity:0; transform:translateY(10px);
-  animation:imCycle 40.5s ease-in-out infinite; /* duración extendida */
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  opacity:0; transform:translateY(12px);
+  animation:imCycle 40.5s ease-in-out infinite;
   will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
-im-item:nth-child(2){animation-delay:13.5s}
+.im-item:nth-child(2){animation-delay:13.5s}  /* <-- faltaba el punto en versiones anteriores */
 .im-item:nth-child(3){animation-delay:27s}
 @keyframes imCycle{
-  0%,   8%   {opacity:0; transform:translateY(10px)}
+  0%,   8%   {opacity:0; transform:translateY(12px)}
   12%,  32%  {opacity:1; transform:translateY(2px)}
   36%, 100%  {opacity:0; transform:translateY(-4px)}
 }
 .im-num{font-size:64px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:0 0 8px 0;text-align:center}
-.im-sub{font-size:18px;color:var(--txt);opacity:.92;line-height:1.25;margin:2px 0 6px 0;text-align:center}
-.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:2px 14px 0;text-align:center}
+.im-sub{font-size:18px;color:var(--txt);opacity:.92;line-height:1.25;margin:0 0 6px 0;text-align:center}
+.im-desc{font-size:16px;color:var(--muted);line-height:1.35;margin:0 14px;text-align:center}
 
 /* Footer */
 .caption{color:var(--muted)!important;margin-top:8px}
@@ -165,7 +177,7 @@ st.markdown(f"""
 @st.cache_data(ttl=75)
 def get_yahoo(sym:str): return quote_last_and_change(sym)
 
-SHOW_PER_LB = True   # Mostrar USD/lb (divide /100 LE=F y HE=F)
+SHOW_PER_LB = True   # Muestra USD/lb (divide LE=F y HE=F entre 100)
 
 fx,fx_chg=get_yahoo("MXN=X")
 lc,lc_chg=get_yahoo("LE=F")
@@ -180,7 +192,7 @@ def adjust_per_lb(price, chg):
 lc, lc_chg = adjust_per_lb(lc, lc_chg)
 lh, lh_chg = adjust_per_lb(lh, lh_chg)
 
-# ======== Series 30D y sparkline SVG ========
+# ======== Series 30D y sparkline SVG (más padding interno) ========
 @st.cache_data(ttl=300)
 def series_30d(sym:str):
     try:
@@ -191,9 +203,9 @@ def series_30d(sym:str):
         return vals
     except: return None
 
-def normalize(vals, w=300, h=44, pad=8):  # más alto y más padding
+def normalize(vals, w=300, h=56, pad=12):
     if not vals or len(vals)<2:
-        return [(0,h/2),(w,h/2)]
+        return [(pad,h/2),(w-pad,h/2)]
     mn=min(vals); mx=max(vals); span=(mx-mn) or 1e-9
     n=len(vals); step=(w-2*pad)/(n-1)
     pts=[]
@@ -205,15 +217,15 @@ def normalize(vals, w=300, h=44, pad=8):  # más alto y más padding
 
 def sparkline_svg(vals, color="var(--muted)"):
     if not vals or len(vals)<2: return ""
-    w,h=300,44
+    w,h=300,56
     pts=normalize(vals,w,h)
     path="M " + " L ".join(f"{x:.2f} {y:.2f}" for x,y in pts)
     lx,ly=pts[-1]
     return f"""
     <div class="spark">
       <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">
-        <path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>
-        <circle cx="{lx:.2f}" cy="{ly:.2f}" r="2.8" fill="{color}"/>
+        <path d="{path}" fill="none" stroke="{color}" stroke-width="2.25"/>
+        <circle cx="{lx:.2f}" cy="{ly:.2f}" r="3.2" fill="{color}"/>
       </svg>
     </div>
     """
@@ -245,9 +257,9 @@ def kpi_cme(title,price,chg, series=None):
     unit="USD/lb" if SHOW_PER_LB else "USD/100 lb"
     spark = sparkline_svg(series, trend_color(series)) if series else ""
     if price is None:
-        price_html=f"{spark}<div class='big'>N/D</div><div class='unit-bottom'>{unit}</div>"; delta=""
+        price_html=f"{spark}<div class='big'>N/D</div><span class='unit-bottom'>{unit}</span>"; delta=""
     else:
-        price_html=f"{spark}<div class='big'>{fmt2(price)}</div><div class='unit-bottom'>{unit}</div>"
+        price_html=f"{spark}<div class='big'>{fmt2(price)}</div><span class='unit-bottom'>{unit}</span>"
         if chg is None: delta=""
         else:
             cls="up" if chg>=0 else "down"; arr="▲" if chg>=0 else "▼"
@@ -283,7 +295,7 @@ def ai_metrics(items):
     except Exception:
         return items
 
-# ====================== GDELT p/ “números” ======================
+# ====================== GDELT (números/notas cortas) ======================
 GDELT_DOC="https://api.gdeltproject.org/api/v2/doc/doc"
 COMMON_HEADERS={"User-Agent":"Mozilla/5.0"}
 
@@ -324,17 +336,17 @@ def default_im():
 
 im_payload = load_json(IM_FILE, default_im())
 
-# Si el snapshot viejo trae HTML incrustado, lo limpio o lo reinicio
 def sanitize_items(items):
     safe=[]
     for it in items[:3]:
-        num = strip_tags(it.get("num","—"))
-        sub = strip_tags(it.get("sub",""))
-        desc= strip_tags(it.get("desc",""))
+        num = html.escape(strip_tags(it.get("num","—")))
+        sub = html.escape(strip_tags(it.get("sub","")))
+        desc= html.escape(strip_tags(it.get("desc","")))
         safe.append({"num":num, "sub":sub, "desc":desc})
     return safe
 
-if any("<" in (it.get("sub","")+it.get("desc","")) for it in im_payload.get("items", [])):
+# Si el snapshot trae HTML, reseteo al instante
+if any("<" in (it.get("sub","")+it.get("desc","")) or "&lt;" in (it.get("sub","")+it.get("desc","")) for it in im_payload.get("items", [])):
     im_payload = default_im()
     save_json(IM_FILE, im_payload)
 
@@ -374,15 +386,6 @@ def refresh_im_async():
             save_json(IM_FILE, payload)
         except: pass
     threading.Thread(target=run, daemon=True).start()
-
-# refresco si está viejo
-def is_stale(payload: dict, max_age_sec: int) -> bool:
-    try:
-        ts = payload.get("updated"); 
-        if not ts: return True
-        t = dt.datetime.fromisoformat(ts)
-        return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
-    except: return True
 
 if is_stale(im_payload, 10*60):
     refresh_im_async()
