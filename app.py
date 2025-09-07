@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v2.9 (sparklines 30D sobre KPIs)
+# LaSultana Meat Index — v3.0 (sparklines con padding + fix insights + USD/lb más grande)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -38,32 +38,31 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 .grid{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px}
 .kpi{display:flex;justify-content:space-between;align-items:flex-start}
 .kpi .title{font-size:18px;color:var(--muted)}
-.kpi .big{font-size:54px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:6px 0 6px 0}
+.kpi .big{font-size:54px;font-weight:900;letter-spacing:.2px;line-height:1.0;margin:8px 0 8px 0}
 .kpi .delta{font-size:20px;margin-left:12px}
-.unit-bottom{font-size:.70em;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:6px} /* 30% más chico */
+.unit-bottom{font-size:.82em;color:var(--muted);font-weight:700;letter-spacing:.3px;margin-top:8px} /* más grande que antes */
 
-/* Sparklines encima del número */
-.spark{height:36px;margin:-4px 0 2px 0}
-.spark svg{width:100%;height:36px;display:block;opacity:.95}
+/* Sparklines encima del número (más aire) */
+.spark{height:44px;margin:6px 0 10px 0}          /* espacio arriba/abajo */
+.spark svg{width:100%;height:44px;display:block;opacity:.95}
 
-/* Market Insights (rotador full-width, suave) */
+/* Market Insights (rotador suave) */
 .im-card{display:flex; align-items:center; justify-content:center;}
 .im-wrap{
   position:relative; width:100%; height:176px;
   overflow:hidden; border:1px solid var(--line); border-radius:12px;
-  padding:8px 10px 10px 10px; display:flex; align-items:center; justify-content:center;
+  padding:10px 12px 12px 12px; display:flex; align-items:center; justify-content:center;
   isolation:isolate; contain:content;
 }
 .im-item{
   position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
   opacity:0; transform:translateY(10px);
-  animation:imCycle 40.5s ease-in-out infinite; /* +35% duración */
+  animation:imCycle 40.5s ease-in-out infinite; /* duración extendida */
   will-change:opacity,transform; pointer-events:none;
 }
 .im-item:nth-child(1){animation-delay:0s}
-.im-item:nth-child(2){animation-delay:13.5s}
+im-item:nth-child(2){animation-delay:13.5s}
 .im-item:nth-child(3){animation-delay:27s}
-/* +40% transición (más tiempo en fade) */
 @keyframes imCycle{
   0%,   8%   {opacity:0; transform:translateY(10px)}
   12%,  32%  {opacity:1; transform:translateY(2px)}
@@ -109,6 +108,10 @@ def is_stale(payload: dict, max_age_sec: int) -> bool:
         t = dt.datetime.fromisoformat(ts)
         return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
     except: return True
+
+def strip_tags(s: str) -> str:
+    if not isinstance(s, str): return s
+    return re.sub(r"<[^>]+>", "", s)
 
 # ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -184,11 +187,11 @@ def series_30d(sym:str):
         d=yf.Ticker(sym).history(period="45d", interval="1d")
         c=d["Close"].dropna()
         if c.shape[0] < 5: return None
-        vals=list(c.values)[-30:]  # últimos ~30
+        vals=list(c.values)[-30:]
         return vals
     except: return None
 
-def normalize(vals, w=300, h=36, pad=2):
+def normalize(vals, w=300, h=44, pad=8):  # más alto y más padding
     if not vals or len(vals)<2:
         return [(0,h/2),(w,h/2)]
     mn=min(vals); mx=max(vals); span=(mx-mn) or 1e-9
@@ -196,39 +199,34 @@ def normalize(vals, w=300, h=36, pad=2):
     pts=[]
     for i,v in enumerate(vals):
         x=pad+i*step
-        y=pad+(h-2*pad)*(1-(v-mn)/span)  # invertido (arriba = mayor)
+        y=pad+(h-2*pad)*(1-(v-mn)/span)
         pts.append((x,y))
     return pts
 
-def sparkline_svg(vals, trend_color="#a9c7e4"):
+def sparkline_svg(vals, color="var(--muted)"):
     if not vals or len(vals)<2: return ""
-    w,h=300,36
+    w,h=300,44
     pts=normalize(vals,w,h)
-    # path
     path="M " + " L ".join(f"{x:.2f} {y:.2f}" for x,y in pts)
-    # último punto
     lx,ly=pts[-1]
     return f"""
     <div class="spark">
       <svg viewBox="0 0 {w} {h}" preserveAspectRatio="none">
-        <path d="{path}" fill="none" stroke="{trend_color}" stroke-width="2"/>
-        <circle cx="{lx:.2f}" cy="{ly:.2f}" r="2.6" fill="{trend_color}"/>
+        <path d="{path}" fill="none" stroke="{color}" stroke-width="2"/>
+        <circle cx="{lx:.2f}" cy="{ly:.2f}" r="2.8" fill="{color}"/>
       </svg>
     </div>
     """
 
-# colores según tendencia
 def trend_color(vals):
     try:
         return "var(--up)" if vals[-1] >= vals[0] else "var(--down)"
     except:
         return "var(--muted)"
 
-# preparamos series
 fx_series = series_30d("MXN=X")
 lc_series = series_30d("LE=F")
 lh_series = series_30d("HE=F")
-# ajustar per-lb a las series de futuros si aplica
 if SHOW_PER_LB and lc_series: lc_series=[v/100.0 for v in lc_series]
 if SHOW_PER_LB and lh_series: lh_series=[v/100.0 for v in lh_series]
 
@@ -256,7 +254,6 @@ def kpi_cme(title,price,chg, series=None):
             delta=f"<div class='delta {cls}'>{arr} {fmt2(abs(chg))}</div>"
     return f"<div class='card'><div class='kpi'><div><div class='title'>{title}</div>{price_html}</div>{delta}</div></div>"
 
-# Render KPIs con sparklines
 kpi_html = "".join([
     kpi_fx("USD/MXN",fx,fx_chg, fx_series),
     kpi_cme("Res en pie",lc,lc_chg, lc_series),
@@ -327,6 +324,20 @@ def default_im():
 
 im_payload = load_json(IM_FILE, default_im())
 
+# Si el snapshot viejo trae HTML incrustado, lo limpio o lo reinicio
+def sanitize_items(items):
+    safe=[]
+    for it in items[:3]:
+        num = strip_tags(it.get("num","—"))
+        sub = strip_tags(it.get("sub",""))
+        desc= strip_tags(it.get("desc",""))
+        safe.append({"num":num, "sub":sub, "desc":desc})
+    return safe
+
+if any("<" in (it.get("sub","")+it.get("desc","")) for it in im_payload.get("items", [])):
+    im_payload = default_im()
+    save_json(IM_FILE, im_payload)
+
 def refresh_im_async():
     def run():
         try:
@@ -355,6 +366,7 @@ def refresh_im_async():
 
             items = (live[:3] + news[:3])[:3]
             items = ai_metrics(items)
+            items = sanitize_items(items)
             if not items: items = default_im()["items"]
             while len(items) < 3: items += items
 
@@ -363,11 +375,20 @@ def refresh_im_async():
         except: pass
     threading.Thread(target=run, daemon=True).start()
 
+# refresco si está viejo
+def is_stale(payload: dict, max_age_sec: int) -> bool:
+    try:
+        ts = payload.get("updated"); 
+        if not ts: return True
+        t = dt.datetime.fromisoformat(ts)
+        return (dt.datetime.utcnow() - t).total_seconds() > max_age_sec
+    except: return True
+
 if is_stale(im_payload, 10*60):
     refresh_im_async()
 
-# ====================== RENDER: INSIGHTS FULL WIDTH ======================
-items_im = im_payload.get("items", default_im()["items"])[:3]
+# ====================== RENDER: INSIGHTS ======================
+items_im = sanitize_items(im_payload.get("items", default_im()["items"]))[:3]
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
