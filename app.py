@@ -1,4 +1,4 @@
-# LaSultana Meat Index — v3.2
+# LaSultana Meat Index — v3.3 (fix insights code-block + sanitize + spark padding)
 import os, re, json, time, threading, datetime as dt
 from zoneinfo import ZoneInfo
 from pathlib import Path
@@ -45,7 +45,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 /* “USD/lb” tamaño estable */
 .unit-bottom{
   display:block;
-  font-size:18px;        /* <-- un poco más grande */
+  font-size:18px;
   color:var(--muted);
   font-weight:800;
   letter-spacing:.3px;
@@ -74,7 +74,7 @@ header[data-testid="stHeader"]{display:none;} #MainMenu{visibility:hidden;} foot
 }
 .im-item:nth-child(1){animation-delay:0s}
 .im-item:nth-child(2){animation-delay:13.5s}
-.im-item:nth-child(3){animation-delay:27s}
+im-item:nth-child(3){animation-delay:27s}
 @keyframes imCycle{
   0%,   8%   {opacity:0; transform:translateY(12px)}
   12%,  32%  {opacity:1; transform:translateY(2px)}
@@ -126,9 +126,7 @@ def strip_tags(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s)
 
 def looks_like_html(s: str) -> bool:
-    return isinstance(s, str) and (
-        "<" in s or "&lt;" in s or "class=" in s or "</" in s
-    )
+    return isinstance(s, str) and ("<" in s or "&lt;" in s or "class=" in s or "</" in s)
 
 # ====================== LOGO ======================
 st.markdown("<div class='logo-row'>", unsafe_allow_html=True)
@@ -343,10 +341,9 @@ def sanitize_items(items):
     safe=[]
     for it in items[:3]:
         n = it.get("num","—"); s = it.get("sub",""); d = it.get("desc","")
-        # Si huele a HTML, descartamos ese item
+        # Descartar entradas que parezcan HTML
         if looks_like_html(n) or looks_like_html(s) or looks_like_html(d):
             n, s, d = "—", "Sin datos recientes", "—"
-        # Strip + escape por si acaso
         n = html.escape(strip_tags(n))
         s = html.escape(strip_tags(s))
         d = html.escape(strip_tags(d))
@@ -381,7 +378,7 @@ def refresh_im_async():
                 p=pct_30d(sym)
                 if p is not None:
                     sign="+" if p>=0 else ""
-                    suffix=" (per lb)" if (SHOW_PER_LB and sym in ["LE=F","HE=F"]) else ""
+                    suffix=" (per lb)" if ("LE=F" in sym or "HE=F" in sym) and True else ""
                     live.append({"num":f"{sign}{p:.1f}%", "sub":f"{label}{suffix} · cambio 30D",
                                  "desc":"Variación de cierre a cierre en los últimos 30 días (Yahoo Finance)."})
 
@@ -405,18 +402,16 @@ def refresh_im_async():
 if is_stale(im_payload, 10*60) or dirty:
     refresh_im_async()
 
-# ====================== RENDER: INSIGHTS ======================
+# ====================== RENDER: INSIGHTS (SIN sangría en HTML) ======================
 items_im = sanitize_items(im_payload.get("items", default_im()["items"]))[:3]
 im_html = ["<div class='card im-card'><div class='im-wrap'>"]
 for it in items_im:
     num=it.get("num","—"); sub=it.get("sub",""); desc=it.get("desc","")
-    im_html.append(f"""
-      <div class="im-item">
-        <div class="im-num">{num}</div>
-        <div class="im-sub">{sub}</div>
-        <div class="im-desc">{desc if desc else "&nbsp;"}</div>
-      </div>
-    """)
+    im_html.append(
+        f"<div class='im-item'><div class='im-num'>{num}</div>"
+        f"<div class='im-sub'>{sub}</div>"
+        f"<div class='im-desc'>{desc if desc else '&nbsp;'}</div></div>"
+    )
 im_html.append("</div></div>")
 st.markdown("".join(im_html), unsafe_allow_html=True)
 
